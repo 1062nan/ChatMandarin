@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /conversation
+Disallow: /hskk
+Disallow: /mistakes
+Disallow: /settings
+Disallow: /api
+Disallow: /auth
+
+Sitemap: https://chatmandarin.cc/sitemap.xml

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" width="180" height="180">
+  <!-- iOS 必须是实心背景，不要透明 -->
+  <rect width="180" height="180" fill="#c23b22"/>
+  <!-- 白色"汉"字 -->
+  <text x="90" y="125" text-anchor="middle" font-family="'Noto Serif SC', 'Songti SC', 'STSong', serif" font-size="110" font-weight="700" fill="#fff">汉</text>
+</svg>

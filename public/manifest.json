@@ -1,0 +1,27 @@
+{
+  "name": "ChatMandarin — AI Chinese Tutor",
+  "short_name": "ChatMandarin",
+  "description": "AI conversation tutor for HSK learners. Speak Mandarin from day 1.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f8f5f0",
+  "theme_color": "#c23b22",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "lang": "en",
+  "dir": "ltr"
+}
