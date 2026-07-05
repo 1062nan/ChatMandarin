@@ -33,7 +33,7 @@ import { createMistakesFromErrors } from '@/lib/db/mistakes'
 import { checkVocabularyLevel, enhanceErrorsWithVocab } from '@/lib/ai/vocab-filter'
 
 export const runtime = 'nodejs'
-export const maxDuration = 30
+export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
