@@ -10,7 +10,7 @@ export default async function ShadowingPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('hsk_level')
+    .select('hsk_level, tts_voice_type')
     .eq('auth_id', user.id)
     .single()
 

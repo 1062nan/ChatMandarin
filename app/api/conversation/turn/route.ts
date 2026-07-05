@@ -63,16 +63,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 验证 conversation 归属当前用户
-    const { data: conv } = await supabase
-      .from('conversations')
-      .select('user_id')
-      .eq('id', conversationId)
-      .single()
-    if (!conv || conv.user_id !== profile.id) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
-    }
-
     // 3. 获取用户 profile
     const { data: profile } = await supabase
       .from('profiles')
@@ -82,6 +72,16 @@ export async function POST(request: NextRequest) {
 
     if (!profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    // 验证 conversation 归属当前用户
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('user_id')
+      .eq('id', conversationId)
+      .single()
+    if (!conv || conv.user_id !== profile.id) {
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
     // 4. 检查免费额度
@@ -120,6 +120,8 @@ export async function POST(request: NextRequest) {
     if (!scenario) {
       return NextResponse.json({ error: 'Scenario not found' }, { status: 404 })
     }
+
+    const scenarioData = scenario as Record<string, any>
 
     // 6. ASR：用户音频 → 文字
     const audioBuffer = await audioFile.arrayBuffer()
@@ -160,9 +162,9 @@ export async function POST(request: NextRequest) {
     const systemPrompt = buildConversationPrompt({
       hskLevel,
       scenarioId,
-      scenarioName: (scenario.name as { en: string }).en,
-      scenarioPrompt: scenario.scenario_prompt,
-      aiPersona: scenario.ai_persona,
+      scenarioName: (scenarioData.name as { en: string }).en,
+      scenarioPrompt: scenarioData.scenario_prompt,
+      aiPersona: scenarioData.ai_persona,
       correctionMode: correctionMode as 'friendly' | 'strict' | 'tutor'
     })
 

@@ -25,9 +25,10 @@ export async function POST(request: NextRequest) {
     const event = JSON.parse(body)
     const parsed = parseWebhookEvent(event)
 
-    // 重放保护：用事件 ID 去重（存储在 KV 或数据库）
+    const supabase = createSupabaseAdmin()
+
+    // 重放保护：用事件 ID 去重
     const eventId = event.meta?.event_id || event.data?.id || ''
-    const eventType = parsed.eventName || ''
     if (eventId) {
       const { data: existing } = await supabase
         .from('subscriptions')
@@ -43,8 +44,6 @@ export async function POST(request: NextRequest) {
       console.warn('Webhook missing user_id in custom_data')
       return NextResponse.json({ error: 'Missing user_id' }, { status: 400 })
     }
-
-    const supabase = createSupabaseAdmin()
 
     // 根据事件类型处理
     switch (parsed.eventName) {

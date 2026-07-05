@@ -103,7 +103,7 @@ export async function updateConversationStats(conversationId: string): Promise<v
 
   const count = turns.length
   const avg = (field: string) =>
-    Math.round(turns.reduce((sum, t) => sum + (t[field] || 0), 0) / count)
+    Math.round(turns.reduce((sum, t) => sum + ((t as any)[field] || 0), 0) / count)
 
   await supabase
     .from('conversations')
@@ -137,7 +137,7 @@ export async function endConversation(conversationId: string): Promise<void> {
   if (conv) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('total_conversations, current_streak, last_practice_date')
+      .select('total_conversations, current_streak, longest_streak, last_practice_date')
       .eq('id', conv.user_id)
       .single()
 

@@ -15,8 +15,7 @@ export default async function ConversationPage({
 
   if (!user) return null
 
-  // 获取场景 + 用户设置
-  const [{ data: scenario }, { data: profile }] = await Promise.all([
+  const [{ data: scenarioData }, { data: profile }] = await Promise.all([
     supabase
       .from('scenarios')
       .select('*')
@@ -30,9 +29,12 @@ export default async function ConversationPage({
       .single()
   ])
 
-  if (!scenario) {
+  if (!scenarioData) {
     notFound()
+    return
   }
+
+  const scenario = scenarioData as Record<string, any>
 
   return (
     <ConversationClient

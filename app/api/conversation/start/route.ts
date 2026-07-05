@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       // AI 生成开场白
       const systemPrompt = buildConversationPrompt({
         hskLevel: hsk_level || 3,
-        scenarioId,
+        scenarioId: scenario_id,
         scenarioName: (scenario.name as { en: string }).en,
         scenarioPrompt: scenario.scenario_prompt,
         aiPersona: scenario.ai_persona,

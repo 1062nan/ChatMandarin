@@ -27,6 +27,7 @@ export async function createCheckoutUrl(opts: CreateCheckoutOpts): Promise<strin
   }
 
   const variantId = opts.plan === 'plus' ? LS_PLUS_VARIANT_ID : LS_PRO_VARIANT_ID
+  if (!variantId) throw new Error('LEMONSQUEEZY variant ID not configured')
 
   const response = await fetch(`${LS_BASE_URL}/checkouts`, {
     method: 'POST',
