@@ -31,6 +31,7 @@ import type { ChatMessage } from '@/lib/ai/deepseek'
 import { saveConversationTurn, getConversationTurns } from '@/lib/db/conversations'
 import { createMistakesFromErrors } from '@/lib/db/mistakes'
 import { checkVocabularyLevel, enhanceErrorsWithVocab } from '@/lib/ai/vocab-filter'
+import { analyzeAudio } from '@/lib/audio/analyze'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -127,10 +128,22 @@ export async function POST(request: NextRequest) {
     const audioBuffer = await audioFile.arrayBuffer()
     const audioFormat = (audioFile.name.split('.').pop() || 'wav').toLowerCase()
 
+    // 诊断：检查音频是否静音（16-bit PCM）
+    const audioDiag = analyzeAudio(audioBuffer)
+    console.log('[conversation/turn] audio received:', {
+      size: audioFile.size,
+      format: audioFormat,
+      ...audioDiag,
+    })
+
     let userText: string
     try {
       const asrResult = await recognizeSpeech(audioBuffer, audioFormat, 16000)
       userText = asrResult.text
+      console.log('[conversation/turn] ASR result:', {
+        text: userText,
+        confidence: asrResult.confidence,
+      })
     } catch (asrError) {
       console.error('ASR failed:', asrError)
       return NextResponse.json(
@@ -140,6 +153,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (!userText || userText.trim().length === 0) {
+      // 根据音频诊断给出更精准的错误
+      if (audioDiag.silent) {
+        return NextResponse.json(
+          {
+            error:
+              '录音中没检测到声音。请检查麦克风是否正确选择、并允许浏览器使用麦克风。',
+          },
+          { status: 422 }
+        )
+      }
       return NextResponse.json(
         { error: 'Could not understand audio. Please try again.' },
         { status: 422 }

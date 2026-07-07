@@ -155,6 +155,15 @@ export function ConversationClient({
       formData.append('scenario_id', scenarioId)
       formData.append('hsk_level', String(hskLevel))
       formData.append('correction_mode', correctionMode)
+      // 客户端诊断信息（帮助排查"录音太短/没声音"）
+      formData.append(
+        'diag',
+        JSON.stringify({
+          duration: result.duration,
+          blobSize: result.blob.size,
+          ...(result.diagnostics || {}),
+        })
+      )
 
       const res = await fetch('/api/conversation/turn', {
         method: 'POST',
