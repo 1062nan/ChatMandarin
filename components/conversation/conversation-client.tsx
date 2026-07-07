@@ -120,10 +120,28 @@ export function ConversationClient({
   const handleStopRecording = useCallback(async () => {
     if (state !== 'recording') return
 
-    const result = audioRecorder.stop()
-    if (!result || result.blob.size < 1000) {
+    let result: { blob: Blob; duration: number; diagnostics?: any } | null = null
+    try {
+      result = await audioRecorder.stop()
+    } catch (err) {
       setState('idle')
-      toast.error('Recording too short. Please try again.')
+      toast.error('录音失败：' + (err as Error).message)
+      return
+    }
+
+    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
+      setState('idle')
+      // 给出更有用的诊断
+      const d = result?.diagnostics
+      if (d?.chunks === 0) {
+        toast.error('麦克风没有声音输入。请检查麦克风权限和设备。')
+        console.error('[AudioRecorder] 0 chunks received', d)
+      } else if (result && result.duration < 0.3) {
+        toast.error(`录音太短（${Math.round(result.duration * 1000)}ms）。请按住按钮多说一会儿。`)
+      } else {
+        toast.error('Recording too short. Please try again.')
+        console.error('[AudioRecorder] small blob', d)
+      }
       return
     }
 

@@ -1,13 +1,38 @@
 /**
- * HSK 词汇后处理过滤器（方案 C）
+ * HSK 词汇后处理过滤器（方案 C + 大纲增强）
  *
  * 在 AI 生成回复后，检查是否包含超纲词汇：
  * 1. 对 AI 回复进行简单分词（按字符/词组匹配）
  * 2. 检查是否包含目标级别以上的词汇
  * 3. 如果发现超纲词 → 标记并在 errors 中提示用户
+ *
+ * 大纲增强：现在同时检查 HSK_LEVELS.avoidWords 和 HSK_SYLLABUS.sampleWords，
+ * 覆盖面从 ~30 词/级 → ~80+ 词/级，更准确判断超纲。
  */
 
 import { HSK_LEVELS } from '@/lib/hsk/vocabulary'
+import { HSK_SYLLABUS } from '@/lib/hsk/syllabus'
+
+/**
+ * 构建每级的"超纲词检测池"：
+ * = 该级别以上所有级的 avoidWords + sampleWords
+ */
+function getOverLevelPool(userLevel: number): Map<string, number> {
+  const pool = new Map<string, number>()
+  for (const syl of HSK_SYLLABUS) {
+    if (syl.level <= userLevel) continue
+    for (const w of syl.sampleWords) {
+      if (w.length >= 2 && !pool.has(w)) pool.set(w, syl.level)
+    }
+  }
+  for (const lv of HSK_LEVELS) {
+    if (lv.level <= userLevel) continue
+    for (const w of lv.avoidWords) {
+      if (w.length >= 2 && !pool.has(w)) pool.set(w, lv.level)
+    }
+  }
+  return pool
+}
 
 interface VocabCheckResult {
   passed: boolean
@@ -30,33 +55,22 @@ export function checkVocabularyLevel(
   targetHSKLevel: number
 ): VocabCheckResult {
   const overLevelWords: VocabCheckResult['overLevelWords'] = []
+  const pool = getOverLevelPool(targetHSKLevel)
 
-  // 获取该级别应该避免的词汇
-  for (const level of HSK_LEVELS) {
-    if (level.level <= targetHSKLevel) continue
-
-    // 检查 reply 中是否包含更高级别的 "avoid words"
-    for (const word of level.avoidWords) {
-      if (word.length < 2) continue // 跳过单字
-
-      // 使用 includes 做简单匹配（中文不需要空格分词）
-      if (reply.includes(word)) {
-        // 尝试找到替代词
-        const suggestion = findSimplerAlternative(word, targetHSKLevel)
-
-        overLevelWords.push({
-          word,
-          userLevel: targetHSKLevel,
-          estimatedLevel: level.level,
-          suggestion
-        })
-      }
+  // 一次扫描即可——所有更高级别的词都在 pool 里
+  for (const [word, lvl] of pool) {
+    if (reply.includes(word)) {
+      const suggestion = findSimplerAlternative(word, targetHSKLevel)
+      overLevelWords.push({
+        word,
+        userLevel: targetHSKLevel,
+        estimatedLevel: lvl,
+        suggestion
+      })
     }
-
-    // 检查核心词是否超出级别
-    // 注意：这不会检查所有词，只检查 "avoid" 列表（已知的高级词）
   }
 
+  // 去重（同一个词可能来自 avoidWords + sampleWords，但 Map 已自动去重）
   return {
     passed: overLevelWords.length === 0,
     overLevelWords

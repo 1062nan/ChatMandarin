@@ -127,42 +127,71 @@ export async function recognizeSpeech(
   })
 
   return new Promise<ASRResult>((resolve, reject) => {
-    // 连接（workstick client.rs:75-78）
-    const ws = new WebSocket(ASR_ENDPOINT, {
-      headers: {
-        'x-api-key': VOLC_API_KEY,
-        'X-Api-Resource-Id': ASR_RESOURCE_ID
-      }
-    })
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(ASR_ENDPOINT, {
+        headers: {
+          'x-api-key': VOLC_API_KEY,
+          'X-Api-Resource-Id': ASR_RESOURCE_ID,
+        },
+      })
+    } catch (err) {
+      reject(new Error(`WebSocket init failed: ${(err as Error).message}`))
+      return
+    }
 
     let resolved = false
     let lastText = ''
+    let opened = false
 
     const timeout = setTimeout(() => {
       if (!resolved) {
         resolved = true
         try { ws.close() } catch {}
-        reject(new Error('ASR timeout (15s)'))
+        reject(
+          new Error(
+            `ASR timeout (30s, opened=${opened}) — ` +
+              `若持续超时，可能是 Vercel 节点到火山引擎网络的连通问题。`
+          )
+        )
       }
-    }, 15000)
+    }, 30000)
+
+    ws.on('unexpected-response', (req, res) => {
+      if (!resolved) {
+        resolved = true
+        clearTimeout(timeout)
+        reject(new Error(`ASR HTTP ${res.statusCode} ${res.statusMessage}`))
+      }
+    })
 
     ws.on('open', () => {
-      // 1. 发送配置（workstick: build_full_request）
-      ws.send(buildFullRequest(initJson))
+      opened = true
+      try {
+        // 1. 发送配置（workstick: build_full_request）
+        ws.send(buildFullRequest(initJson))
 
-      // 2. 发送音频 PCM（workstick: build_audio_request, isLast=false）
-      const SEGMENT_SIZE = 6400 // 200ms @ 16kHz 16bit
-      let offset = 0
-      while (offset < pcmData.length) {
-        const end = Math.min(offset + SEGMENT_SIZE, pcmData.length)
-        const isLast = end >= pcmData.length
-        ws.send(buildAudioRequest(pcmData.slice(offset, end), isLast))
-        offset = end
-      }
+        // 2. 发送音频 PCM（workstick: build_audio_request, isLast=false）
+        const SEGMENT_SIZE = 6400 // 200ms @ 16kHz 16bit
+        let offset = 0
+        while (offset < pcmData.length) {
+          const end = Math.min(offset + SEGMENT_SIZE, pcmData.length)
+          const isLast = end >= pcmData.length
+          ws.send(buildAudioRequest(pcmData.slice(offset, end), isLast))
+          offset = end
+        }
 
-      // 3. 发送空结束包（workstick: build_audio_request with isLast=true, empty data）
-      if (pcmData.length === 0) {
-        ws.send(buildAudioRequest(Buffer.alloc(0), true))
+        // 3. 发送空结束包（workstick: build_audio_request with isLast=true, empty data）
+        if (pcmData.length === 0) {
+          ws.send(buildAudioRequest(Buffer.alloc(0), true))
+        }
+      } catch (sendErr) {
+        // 捕获 ws 库内部 mask 错误等
+        if (!resolved) {
+          resolved = true
+          clearTimeout(timeout)
+          reject(new Error(`ASR ws.send failed: ${(sendErr as Error).message}`))
+        }
       }
     })
 

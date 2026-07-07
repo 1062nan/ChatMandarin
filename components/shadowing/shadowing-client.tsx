@@ -76,10 +76,10 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
   }, [audioRecorder])
 
   const stopAndScore = useCallback(async () => {
-    const result = audioRecorder.stop()
+    const result = await audioRecorder.stop()
     setIsRecording(false)
-    if (!result || result.blob.size < 1000) {
-      toast.error('Recording too short')
+    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
+      toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
       return
     }
 

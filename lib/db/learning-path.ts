@@ -15,6 +15,11 @@ export interface LearningUnit {
   unlock_score: number
   content_config: any
   sort_order: number
+  // HSK 大纲标签（migration 007）— 后端用，前端默认不展示
+  grammar_points?: string[]
+  vocab_topics?: string[]
+  exam_skills?: string[]
+  official_scenario_ids?: string[]
 }
 
 export interface UserUnitProgress {

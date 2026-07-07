@@ -5,6 +5,7 @@
  */
 
 import { getConversationResponse, safeParseJSON } from '@/lib/ai/deepseek'
+import { getSyllabusPromptContext, getUnitSyllabusTag } from '@/lib/hsk/syllabus'
 
 // ==================== 场景生成 ====================
 
@@ -53,10 +54,13 @@ export async function generateScenario(hskLevel: number, themeId?: string): Prom
     ? SCENARIO_THEMES.find(t => t.id === themeId) || SCENARIO_THEMES[Math.floor(Math.random() * SCENARIO_THEMES.length)]
     : SCENARIO_THEMES[Math.floor(Math.random() * SCENARIO_THEMES.length)]
 
+  const syllabusContext = getSyllabusPromptContext(hskLevel, theme.en)
+
   const prompt = `Generate a Chinese conversation practice scenario. Return JSON only.
 
 Theme: ${theme.en} (${theme.zh})
-HSK Level: ${hskLevel}
+
+${syllabusContext}
 
 Return this JSON structure:
 {
@@ -64,12 +68,13 @@ Return this JSON structure:
   "description": {"en": "One sentence description in English", "zh": "一句中文描述"},
   "ai_persona": "You are a [role] at a [place]. Describe personality in Chinese.",
   "scenario_prompt": "Detailed instructions for the AI on how to conduct this conversation. Include what to discuss, flow of conversation, and cultural tips. Write in English.",
-  "goals": ["goal 1", "goal 2", "goal 3"],
+  "goals": ["goal 1 - must use specific HSK grammar point", "goal 2", "goal 3"],
   "completion_criteria": {"min_turns": 6}
 }
 
 The ai_persona must be written in Chinese.
-Keep vocabulary appropriate for HSK ${hskLevel}.`
+The scenario_prompt must explicitly reference 2-3 HSK ${hskLevel} grammar points from the syllabus above.
+The goals must list which HSK ${hskLevel} grammar points the student should practice in this scenario.`
 
   const result = await getConversationResponse(prompt, [
     { role: 'user', content: `Generate scenario: ${theme.en} for HSK ${hskLevel}` }
@@ -91,9 +96,12 @@ Keep vocabulary appropriate for HSK ${hskLevel}.`
 // ==================== 跟读句生成 ====================
 
 export async function generateShadowingSentences(hskLevel: number, category: string, count: number = 5): Promise<any[]> {
+  const syllabusContext = getSyllabusPromptContext(hskLevel, category)
+
   const prompt = `Generate ${count} Chinese sentences for shadowing practice.
 
-HSK Level: ${hskLevel}
+${syllabusContext}
+
 Category: ${category}
 
 Return JSON array:
@@ -104,12 +112,15 @@ Return JSON array:
     "text_en": "English translation",
     "hsk_level": ${hskLevel},
     "category": "${category}",
-    "difficulty": "easy|medium|hard"
+    "difficulty": "easy|medium|hard",
+    "grammar_point": "Which HSK ${hskLevel} grammar point this sentence practices (from the syllabus list above)"
   }
 ]
 
 Rules:
-- Use only HSK ${hskLevel} and below vocabulary
+- Use ONLY vocabulary at HSK ${hskLevel} and below (cumulative across levels)
+- Each sentence must demonstrate one of the grammar points from the syllabus above
+- Cover at least ${Math.min(count, 5)} different grammar points across the batch (don't repeat)
 - Include a mix of statement, question, and exclamation sentences
 - Make them natural and useful for daily life
 - Pinyin must include tone marks`
@@ -149,12 +160,14 @@ export async function generateDubbingClip(hskLevel: number, difficulty: string):
   ]
 
   const theme = themes[Math.floor(Math.random() * themes.length)]
+  const syllabusContext = getSyllabusPromptContext(hskLevel, theme)
 
   const prompt = `Create an original short dialogue scene for Chinese dubbing practice.
 
 Theme: ${theme}
-HSK Level: ${hskLevel}
 Difficulty: ${difficulty}
+
+${syllabusContext}
 
 Return JSON only:
 {
@@ -170,13 +183,16 @@ Return JSON only:
       "text": "中文台词（15-30字）",
       "pinyin": "pīnyīn",
       "translation": "English translation",
-      "emotion": "happy|sad|angry|neutral|excited|serious|fearful"
+      "emotion": "happy|sad|angry|neutral|excited|serious|fearful",
+      "grammar_point": "Which HSK ${hskLevel} grammar point this line practices"
     }
   ]
 }
 
 Generate 4-6 lines of dialogue. Make it natural and engaging.
-Use HSK ${hskLevel} and below vocabulary.`
+Use ONLY HSK ${hskLevel} and below vocabulary.
+Each line should naturally demonstrate at least one grammar point from the syllabus above (label it in grammar_point).
+Cover at least 3 different grammar points across the clip.`
 
   const result = await getConversationResponse(prompt, [
     { role: 'user', content: `Generate dubbing clip: ${theme}` }
@@ -207,12 +223,18 @@ export async function generateHSKKTest(level: 'beginner' | 'intermediate' | 'adv
     advanced: { hsk: 6, wordRange: '500-800 characters', qaComplexity: 'complex discussion questions' },
   }
   const cfg = levelMap[level]
+  const syllabusContext = getSyllabusPromptContext(cfg.hsk)
 
   const prompt = `Generate an HSKK ${level} mock test. Return JSON only.
+
+${syllabusContext}
 
 Reading passage: ${cfg.wordRange}, HSK ${cfg.hsk} level vocabulary.
 Q&A: 3 ${cfg.qaComplexity}.
 Picture description: Describe a scene (provide a prompt, we'll use a placeholder image).
+
+The reading passage MUST use at least 4 different grammar points from the HSK ${cfg.hsk} syllabus above.
+The Q&A questions MUST collectively cover at least 4 different grammar points.
 
 Return:
 {
@@ -249,4 +271,57 @@ Return:
 export function getRecommendedScenarios(hskLevel: number, completedScenarios: string[]): string[] {
   const available = SCENARIO_THEMES.filter(t => !completedScenarios.includes(t.id))
   return available.slice(0, 5).map(t => t.id)
+}
+
+/**
+ * 生成针对特定学习单元的场景（HSK 大纲精准对齐）
+ * 用法：admin 后台为某个学习单元批量生成内容
+ */
+export async function generateScenarioForUnit(unitId: string, hskLevel: number): Promise<GeneratedScenario | null> {
+  const tag = getUnitSyllabusTag(unitId)
+  if (!tag) return null
+
+  // 优先使用该单元绑定的官方场景 ID
+  const themeId = tag.scenarioIds[Math.floor(Math.random() * tag.scenarioIds.length)]
+    || undefined
+  const theme = themeId
+    ? SCENARIO_THEMES.find(t => t.id === themeId) || SCENARIO_THEMES[0]
+    : SCENARIO_THEMES[0]
+
+  const grammarList = tag.grammarFocus.join('、')
+  const vocabList = tag.vocabFocus.join('、')
+
+  const prompt = `Generate a Chinese conversation scenario tightly aligned with specific HSK ${hskLevel} syllabus items. Return JSON only.
+
+Unit ID: ${unitId}
+Theme: ${theme.en} (${theme.zh})
+Required grammar points (the scenario MUST let student practice these): ${grammarList}
+Required vocabulary topics: ${vocabList}
+Exam skills trained: ${tag.examSkillFocus.join('、')}
+
+Return this JSON structure:
+{
+  "name": {"en": "${theme.en}", "zh": "${theme.zh}"},
+  "description": {"en": "...", "zh": "..."},
+  "ai_persona": "中文人物设定",
+  "scenario_prompt": "Detailed instructions in English. Must explicitly mention the grammar points to practice: ${grammarList}",
+  "goals": ["Goal using ${tag.grammarFocus[0]}", "Goal using ${tag.grammarFocus[1] || tag.grammarFocus[0]}", "Goal using ${tag.grammarFocus[2] || tag.grammarFocus[0]}"],
+  "completion_criteria": {"min_turns": 6}
+}`
+
+  const result = await getConversationResponse(prompt, [
+    { role: 'user', content: `Generate scenario for unit ${unitId}` }
+  ])
+
+  return {
+    id: `${unitId}-${Date.now()}`,
+    name: (result as any).name || { en: theme.en, zh: theme.zh },
+    description: (result as any).description || { en: theme.en, zh: theme.zh },
+    recommended_hsk: [Math.max(1, hskLevel - 1), hskLevel, hskLevel + 1],
+    duration_minutes: 5,
+    ai_persona: (result as any).ai_persona || `你是一个${theme.zh}场景中的角色。`,
+    scenario_prompt: (result as any).scenario_prompt || `Guide the student through ${theme.en}.`,
+    goals: (result as any).goals || ['完成对话'],
+    completion_criteria: (result as any).completion_criteria || { min_turns: 6 }
+  }
 }

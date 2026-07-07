@@ -89,10 +89,10 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
 
   // 逐句练习评分
   const stopAndScore = useCallback(async () => {
-    const result = audioRecorder.stop()
+    const result = await audioRecorder.stop()
     setIsRecording(false)
-    if (!result || result.blob.size < 1000) {
-      toast.error('Recording too short')
+    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
+      toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
       return
     }
 
@@ -119,10 +119,10 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
 
   // 正式表演
   const stopAndPerform = useCallback(async () => {
-    const result = audioRecorder.stop()
+    const result = await audioRecorder.stop()
     setIsRecording(false)
-    if (!result || result.blob.size < 1000) {
-      toast.error('Recording too short')
+    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
+      toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
       return
     }
 

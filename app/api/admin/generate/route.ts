@@ -1,14 +1,25 @@
 /**
  * POST /api/admin/generate
- * 管理员专用：批量生成内容（场景/跟读句/配音/HSKK）
+ * 管理员专用：批量生成内容（场景/跟读句/配音/HSKK/单元对齐）
  *
  * Header: x-admin-token: ADMIN_TOKEN
- * Body: { type: 'scenario'|'shadowing'|'dubbing', hsk_level, count, options }
+ * Body: { type: 'scenario'|'shadowing'|'dubbing'|'unit', hsk_level, count, options, unit_id }
+ *
+ * type='unit'：按 learning_unit 的大纲标签批量生成精准对齐的场景
+ *   - 必填: unit_id (如 'hsk1-unit1')
+ *   - 可选: count (默认 3)
+ *   - 自动查 learning_units 表得到 hsk_level
+ *   - 生成的场景自动写入 unit_id 字段
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { generateScenario, generateShadowingSentences, generateDubbingClip } from '@/lib/ai/content-generator'
+import {
+  generateScenario,
+  generateShadowingSentences,
+  generateDubbingClip,
+  generateScenarioForUnit,
+} from '@/lib/ai/content-generator'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -102,8 +113,73 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ generated: results.length, clips: results })
       }
 
+      case 'unit': {
+        // 按 learning_unit 的 HSK 大纲标签批量生成场景
+        const unitId = body.unit_id
+        if (!unitId || typeof unitId !== 'string') {
+          return NextResponse.json(
+            { error: "unit_id is required for type='unit'" },
+            { status: 400 }
+          )
+        }
+        const n = Math.min(count || 3, 10) // 安全上限
+
+        // 取出该单元（拿到 hsk_level）
+        const { data: unit, error: unitErr } = await supabase
+          .from('learning_units')
+          .select('id, hsk_level, title, official_scenario_ids')
+          .eq('id', unitId)
+          .single()
+
+        if (unitErr || !unit) {
+          return NextResponse.json(
+            { error: `Unit not found: ${unitId}` },
+            { status: 404 }
+          )
+        }
+
+        for (let i = 0; i < n; i++) {
+          try {
+            const scenario = await generateScenarioForUnit(unitId, unit.hsk_level)
+            if (!scenario) continue
+            const { data, error } = await supabase
+              .from('scenarios')
+              .insert({
+                id: scenario.id,
+                name: scenario.name,
+                description: scenario.description,
+                recommended_hsk: scenario.recommended_hsk,
+                duration_minutes: scenario.duration_minutes,
+                ai_persona: scenario.ai_persona,
+                scenario_prompt: scenario.scenario_prompt,
+                goals: scenario.goals,
+                completion_criteria: scenario.completion_criteria,
+                is_active: true,
+                sort_order: 300 + i,
+                unit_id: unitId, // ← 自动绑定到该单元
+              })
+              .select()
+              .single()
+            if (!error && data) results.push(data)
+          } catch (e) {
+            console.error(`Unit scenario gen failed (${unitId} #${i}):`, e)
+          }
+        }
+
+        return NextResponse.json({
+          generated: results.length,
+          unit_id: unitId,
+          unit_title: unit.title,
+          hsk_level: unit.hsk_level,
+          scenarios: results,
+        })
+      }
+
       default:
-        return NextResponse.json({ error: 'Invalid type. Use: scenario, shadowing, or dubbing' }, { status: 400 })
+        return NextResponse.json(
+          { error: 'Invalid type. Use: scenario, shadowing, dubbing, or unit' },
+          { status: 400 }
+        )
     }
   } catch (error) {
     console.error('Admin generation failed:', error)

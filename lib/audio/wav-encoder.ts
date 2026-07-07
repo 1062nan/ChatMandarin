@@ -1,43 +1,42 @@
 /**
- * WAV 编码器
- * 将 AudioContext 的 raw PCM 数据编码为 WAV Blob
- * 火山引擎 ASR 需要 WAV 或 PCM 格式
+ * WAV 编码器 + 录音器
+ *
+ * 关键修复（v2）：
+ * 1. 不在 AudioContext 强制 sampleRate:16000（很多浏览器会拒绝或 suspended）
+ * 2. start 后立即 await audioContext.resume()（iOS/Chrome 自动播放策略）
+ * 3. 录音用浏览器原生采样率 → 之后用 OfflineAudioContext 重采样到 16kHz
+ * 4. 加录音时长 + 错误诊断字段，方便排查
  */
 
 /**
- * 将 Float32Array PCM 数据编码为 WAV Blob
+ * 将 Float32Array PCM 数据编码为 WAV Blob（指定采样率）
  */
 export function encodeWAV(samples: Float32Array, sampleRate: number = 16000): Blob {
   const buffer = new ArrayBuffer(44 + samples.length * 2)
   const view = new DataView(buffer)
 
-  // WAV 文件头
   const writeString = (offset: number, str: string) => {
     for (let i = 0; i < str.length; i++) {
       view.setUint8(offset + i, str.charCodeAt(i))
     }
   }
 
-  // RIFF header
   writeString(0, 'RIFF')
   view.setUint32(4, 36 + samples.length * 2, true)
   writeString(8, 'WAVE')
 
-  // fmt chunk
   writeString(12, 'fmt ')
-  view.setUint32(16, 16, true)           // chunk size
-  view.setUint16(20, 1, true)             // audio format (PCM)
-  view.setUint16(22, 1, true)             // num channels (mono)
-  view.setUint32(24, sampleRate, true)    // sample rate
-  view.setUint32(28, sampleRate * 2, true) // byte rate
-  view.setUint16(32, 2, true)             // block align
-  view.setUint16(34, 16, true)            // bits per sample
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, 1, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * 2, true)
+  view.setUint16(32, 2, true)
+  view.setUint16(34, 16, true)
 
-  // data chunk
   writeString(36, 'data')
   view.setUint32(40, samples.length * 2, true)
 
-  // 写入 PCM 数据（float32 → int16）
   let offset = 44
   for (let i = 0; i < samples.length; i++) {
     const s = Math.max(-1, Math.min(1, samples[i]))
@@ -49,8 +48,37 @@ export function encodeWAV(samples: Float32Array, sampleRate: number = 16000): Bl
 }
 
 /**
- * 从 MediaStream 录制音频
- * 返回一个控制器对象，可以开始/停止录制
+ * 用 OfflineAudioContext 把任意采样率的 Float32 重采样到目标采样率
+ */
+async function resample(samples: Float32Array, fromRate: number, toRate: number): Promise<Float32Array> {
+  if (fromRate === toRate) return samples
+
+  const duration = samples.length / fromRate
+  const offline = new OfflineAudioContext(1, Math.ceil(duration * toRate), toRate)
+  const buffer = offline.createBuffer(1, samples.length, fromRate)
+  // 复制到独立的 ArrayBuffer，避免 TypeScript ArrayBufferLike vs ArrayBuffer 不匹配
+  const copy = new Float32Array(samples)
+  buffer.copyToChannel(copy as Float32Array<ArrayBuffer>, 0)
+  const src = offline.createBufferSource()
+  src.buffer = buffer
+  src.connect(offline.destination)
+  src.start(0)
+  const rendered = await offline.startRendering()
+  return rendered.getChannelData(0)
+}
+
+export interface RecorderDiagnostics {
+  chunks: number
+  durationMs: number
+  contextSampleRate: number
+  contextState: string
+  blobSize: number
+}
+
+/**
+ * 浏览器麦克风录音器
+ * - 用浏览器默认采样率录音（避免 suspended）
+ * - 停止时重采样到 16kHz 再编码
  */
 export class AudioRecorder {
   private audioContext: AudioContext | null = null
@@ -59,12 +87,17 @@ export class AudioRecorder {
   private processor: ScriptProcessorNode | null = null
   private chunks: Float32Array[] = []
   private isRecording = false
-  private sampleRate = 16000
+  private recordStartTs = 0
+  private readonly targetSampleRate = 16000
 
   onAudioLevel?: (level: number) => void
 
   async start(): Promise<void> {
     if (this.isRecording) return
+
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      throw new Error('Browser does not support microphone access (getUserMedia missing)')
+    }
 
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -73,57 +106,88 @@ export class AudioRecorder {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
-          sampleRate: this.sampleRate
-        }
+        },
       })
 
-      this.audioContext = new AudioContext({ sampleRate: this.sampleRate })
+      // 关键：不要在 AudioContext 强制 sampleRate，浏览器会更愿意 running
+      const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext
+      this.audioContext = new Ctx()
+
+      // iOS / 桌面自动播放策略：必须在用户手势内 resume
+      if (this.audioContext.state === 'suspended') {
+        try {
+          await this.audioContext.resume()
+        } catch {}
+      }
+
       this.source = this.audioContext.createMediaStreamSource(this.mediaStream)
 
-      // 使用 ScriptProcessorNode 录制原始 PCM
-      // bufferSize=4096 → 低延迟
+      // ScriptProcessor 已废弃但仍工作；bufferSize 4096 = 低延迟
       this.processor = this.audioContext.createScriptProcessor(4096, 1, 1)
 
       this.processor.onaudioprocess = (event) => {
         if (!this.isRecording) return
-
         const input = event.inputBuffer.getChannelData(0)
-        // 复制数据（原始 buffer 会被重用）
         const chunk = new Float32Array(input.length)
         chunk.set(input)
         this.chunks.push(chunk)
 
-        // 计算音量（用于 UI 显示）
         if (this.onAudioLevel) {
           let sum = 0
-          for (let i = 0; i < input.length; i++) {
-            sum += input[i] * input[i]
-          }
+          for (let i = 0; i < input.length; i++) sum += input[i] * input[i]
           const rms = Math.sqrt(sum / input.length)
           this.onAudioLevel(Math.min(1, rms * 5))
         }
       }
 
+      // 关键：必须 connect destination，否则 onaudioprocess 不会触发
       this.source.connect(this.processor)
       this.processor.connect(this.audioContext.destination)
 
       this.isRecording = true
       this.chunks = []
+      this.recordStartTs = Date.now()
     } catch (error) {
       this.cleanup()
-      throw new Error(`Failed to access microphone: ${(error as Error).message}`)
+      const msg = (error as Error)?.message || String(error)
+      if (msg.includes('Permission') || msg.includes('denied') || msg.includes('NotAllowed')) {
+        throw new Error('Microphone permission denied. Please allow mic access in browser settings.')
+      }
+      if (msg.includes('NotFound') || msg.includes('DevicesNotFoundError')) {
+        throw new Error('No microphone found. Please connect a microphone.')
+      }
+      throw new Error(`Failed to access microphone: ${msg}`)
     }
   }
 
-  stop(): { blob: Blob; duration: number } | null {
-    if (!this.isRecording || this.chunks.length === 0) {
+  async stop(): Promise<{ blob: Blob; duration: number; diagnostics: RecorderDiagnostics } | null> {
+    if (!this.isRecording) {
       this.cleanup()
       return null
     }
 
     this.isRecording = false
 
-    // 合并所有 chunk
+    const contextSampleRate = this.audioContext?.sampleRate || this.targetSampleRate
+    const contextState = this.audioContext?.state || 'unknown'
+    const chunksCount = this.chunks.length
+    const durationMs = Date.now() - this.recordStartTs
+
+    if (this.chunks.length === 0) {
+      this.cleanup()
+      return {
+        blob: new Blob([], { type: 'audio/wav' }),
+        duration: 0,
+        diagnostics: {
+          chunks: 0,
+          durationMs,
+          contextSampleRate,
+          contextState,
+          blobSize: 0,
+        },
+      }
+    }
+
     const totalLength = this.chunks.reduce((sum, chunk) => sum + chunk.length, 0)
     const merged = new Float32Array(totalLength)
     let offset = 0
@@ -132,11 +196,28 @@ export class AudioRecorder {
       offset += chunk.length
     }
 
-    const blob = encodeWAV(merged, this.sampleRate)
-    const duration = merged.length / this.sampleRate
+    // 重采样到 16kHz（火山引擎 ASR 要求）
+    let finalSamples: Float32Array = merged
+    try {
+      finalSamples = await resample(merged, contextSampleRate, this.targetSampleRate)
+    } catch {
+      // 重采样失败就发原始数据
+      finalSamples = merged
+    }
+
+    const blob = encodeWAV(finalSamples, this.targetSampleRate)
+    const duration = finalSamples.length / this.targetSampleRate
+
+    const diagnostics: RecorderDiagnostics = {
+      chunks: chunksCount,
+      durationMs,
+      contextSampleRate,
+      contextState,
+      blobSize: blob.size,
+    }
 
     this.cleanup()
-    return { blob, duration }
+    return { blob, duration, diagnostics }
   }
 
   cancel(): void {
@@ -151,19 +232,19 @@ export class AudioRecorder {
 
   private cleanup(): void {
     if (this.processor) {
-      this.processor.disconnect()
+      try { this.processor.disconnect() } catch {}
       this.processor = null
     }
     if (this.source) {
-      this.source.disconnect()
+      try { this.source.disconnect() } catch {}
       this.source = null
     }
     if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach(t => t.stop())
+      this.mediaStream.getTracks().forEach((t) => t.stop())
       this.mediaStream = null
     }
     if (this.audioContext) {
-      this.audioContext.close()
+      try { this.audioContext.close() } catch {}
       this.audioContext = null
     }
   }

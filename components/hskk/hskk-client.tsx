@@ -88,11 +88,11 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
   }, [audioRecorder])
 
   // 停止录音
-  const stopRecording = useCallback((): Blob | null => {
-    const result = audioRecorder.stop()
+  const stopRecording = useCallback(async (): Promise<Blob | null> => {
+    const result = await audioRecorder.stop()
     setIsRecording(false)
-    if (!result || result.blob.size < 1000) {
-      toast.error('Recording too short')
+    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
+      toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
       return null
     }
     return result.blob
@@ -112,16 +112,16 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
   }
 
   // 朗读部分：录音完成
-  const handleReadRecorded = () => {
-    const blob = stopRecording()
+  const handleReadRecorded = async () => {
+    const blob = await stopRecording()
     if (!blob) return
     setRecordings(prev => ({ ...prev, read: blob }))
     setPhase('qa-intro')
   }
 
   // 问答部分
-  const handleQaRecorded = () => {
-    const blob = stopRecording()
+  const handleQaRecorded = async () => {
+    const blob = await stopRecording()
     if (!blob) return
     setRecordings(prev => ({ ...prev, qa: [...prev.qa, blob] }))
 
@@ -136,8 +136,8 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
   }
 
   // 看图说话：录音完成
-  const handlePictureRecorded = () => {
-    const blob = stopRecording()
+  const handlePictureRecorded = async () => {
+    const blob = await stopRecording()
     if (!blob) return
     setRecordings(prev => ({ ...prev, picture: blob }))
     handleSubmit()
