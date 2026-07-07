@@ -7,6 +7,7 @@ import { AudioRecorder } from '@/lib/audio/wav-encoder'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
+import { MicPermissionBanner } from '@/components/audio/mic-permission-banner'
 
 interface Sentence {
   id: string
@@ -129,6 +130,8 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <audio ref={audioRef} />
+
+      <MicPermissionBanner />
 
       {/* Header */}
       <div className="flex items-center justify-between">

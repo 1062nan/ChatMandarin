@@ -8,6 +8,7 @@ import { AudioRecorder } from '@/lib/audio/wav-encoder'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils/cn'
+import { MicPermissionBanner } from '@/components/audio/mic-permission-banner'
 import type { MistakeEntry } from '@/lib/db/types'
 
 interface Message {
@@ -55,9 +56,21 @@ export function ConversationClient({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // 录音期间累计最大音量（用于检测静音）
+  const maxLevelRef = useRef(0)
+  const silenceWarnedRef = useRef(false)
+  const stateRef = useRef<ConversationState>('idle')
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
   // 设置录音音量回调
   useEffect(() => {
-    audioRecorder.onAudioLevel = (level) => setAudioLevel(level)
+    audioRecorder.onAudioLevel = (level) => {
+      setAudioLevel(level)
+      if (level > maxLevelRef.current) maxLevelRef.current = level
+    }
   }, [audioRecorder])
 
   // 自动滚动到最新消息
@@ -106,13 +119,32 @@ export function ConversationClient({
   const handleStartRecording = useCallback(async () => {
     if (!conversationId || state !== 'idle') return
     setError(null)
+    maxLevelRef.current = 0
+    silenceWarnedRef.current = false
 
     try {
       await audioRecorder.start()
       setState('recording')
+
+      // 1.2 秒后如果一次都没收到音量 → 静默警告
+      setTimeout(() => {
+        if (
+          stateRef.current === 'recording' &&
+          maxLevelRef.current < 0.01 &&
+          !silenceWarnedRef.current
+        ) {
+          silenceWarnedRef.current = true
+          toast.error(
+            '没收到麦克风声音。请检查浏览器地址栏左侧的麦克风权限，确认选择了正确的麦克风设备。'
+          )
+        }
+      }, 1200)
     } catch (err) {
       toast.error('Cannot access microphone. Please check permissions.')
-      setError('Microphone access denied. Please allow microphone access and try again.')
+      setError(
+        '麦克风无法访问。请点击浏览器地址栏左侧的 🔒 / 麦克风 图标，' +
+          '允许麦克风权限并刷新页面。'
+      )
     }
   }, [conversationId, state, audioRecorder])
 
@@ -142,6 +174,16 @@ export function ConversationClient({
         toast.error('Recording too short. Please try again.')
         console.error('[AudioRecorder] small blob', d)
       }
+      return
+    }
+
+    // 整段音量都很低 → 静音检测
+    if (maxLevelRef.current < 0.01) {
+      setState('idle')
+      toast.error(
+        '麦克风未检测到声音输入。请检查：1) 浏览器地址栏左侧 🔒 麦克风权限；' +
+          '2) 系统是否选对了麦克风设备；3) 麦克风是否被静音。'
+      )
       return
     }
 
@@ -359,22 +401,35 @@ export function ConversationClient({
         </div>
       )}
 
+      {/* 麦克风权限提示（静音时尤其有用） */}
+      <MicPermissionBanner className="mb-4" />
+
       {/* 录音控制区 */}
       {state !== 'completed' && (
         <div className="sticky bottom-0 border-t bg-background/80 backdrop-blur-md">
           <div className="flex flex-col items-center gap-3 py-4">
             {/* 音量指示器（录音中） */}
             {state === 'recording' && (
-              <div className="flex h-8 items-center gap-1">
-                {[...Array(20)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-1 rounded-full bg-vermilion transition-all"
-                    style={{
-                      height: `${Math.max(4, Math.min(32, audioLevel * 40 * (1 - Math.abs(i - 10) / 10)))}px`
-                    }}
-                  />
-                ))}
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex h-8 items-center gap-1">
+                  {[...Array(20)].map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        'w-1 rounded-full transition-all',
+                        audioLevel < 0.01 ? 'bg-muted-foreground/30' : 'bg-vermilion'
+                      )}
+                      style={{
+                        height: `${Math.max(4, Math.min(32, audioLevel * 40 * (1 - Math.abs(i - 10) / 10)))}px`
+                      }}
+                    />
+                  ))}
+                </div>
+                {audioLevel < 0.01 && (
+                  <p className="text-xs text-vermilion animate-pulse">
+                    ⚠️ 麦克风没收到声音，请检查浏览器权限和设备
+                  </p>
+                )}
               </div>
             )}
 
