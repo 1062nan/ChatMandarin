@@ -32,6 +32,7 @@ import { saveConversationTurn, getConversationTurns } from '@/lib/db/conversatio
 import { createMistakesFromErrors } from '@/lib/db/mistakes'
 import { checkVocabularyLevel, enhanceErrorsWithVocab } from '@/lib/ai/vocab-filter'
 import { analyzeAudio } from '@/lib/audio/analyze'
+import { getSubscriptionContext, checkQuota } from '@/lib/subscription/tier'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -85,30 +86,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
 
-    // 4. 检查免费额度
-    const { data: sub } = await supabase
-      .from('subscriptions')
-      .select('plan, status')
-      .eq('user_id', profile.id)
-      .eq('status', 'active')
-      .single()
-
-    const plan = sub?.plan || 'free'
-    if (plan === 'free') {
-      const today = new Date().toISOString().split('T')[0]
-      const { data: usage } = await supabase
-        .from('usage_stats')
-        .select('conversation_seconds')
-        .eq('user_id', profile.id)
-        .eq('date', today)
-        .single()
-
-      if (usage && usage.conversation_seconds >= 300) {
-        return NextResponse.json(
-          { error: 'Daily limit reached', upgrade_required: true },
-          { status: 429 }
-        )
-      }
+    // 4. 订阅 + 对话配额检查（free: 5min/天；plus/pro: 无限）
+    const subCtx = await getSubscriptionContext(profile.id)
+    const convQuota = await checkQuota(subCtx, profile.id, 'conversation')
+    if (!convQuota.ok) {
+      return NextResponse.json(
+        {
+          error: 'Daily conversation limit reached (5 min for free tier). Upgrade for unlimited.',
+          upgrade_required: true,
+          remaining: convQuota.remaining,
+          plan: subCtx.plan,
+        },
+        { status: 429 }
+      )
     }
 
     // 5. 获取场景数据

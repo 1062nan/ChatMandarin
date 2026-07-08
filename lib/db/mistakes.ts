@@ -3,9 +3,14 @@
  */
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Mistake, MistakeEntry, MistakeType } from '@/lib/db/types'
+import { getSubscriptionContext } from '@/lib/subscription/tier'
 
 /**
  * 批量创建错题（从一轮对话的 errors 中提取）
+ *
+ * 配额规则：
+ * - free: 未掌握错题上限 20 条，超出时不再保存新错题（但不中断对话）
+ * - plus/pro: 无限
  */
 export async function createMistakesFromErrors(opts: {
   userId: string
@@ -17,7 +22,28 @@ export async function createMistakesFromErrors(opts: {
   if (!opts.errors || opts.errors.length === 0) return
 
   const supabase = await createSupabaseServerClient()
-  const records = opts.errors.map((err) => ({
+
+  // 检查容量
+  const subCtx = await getSubscriptionContext(opts.userId)
+  let allowedNew = opts.errors.length
+  if (subCtx.features.mistakeCapacity !== null) {
+    const { count } = await supabase
+      .from('mistakes')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', opts.userId)
+      .eq('mastered', false)
+    const current = count || 0
+    const remaining = Math.max(0, subCtx.features.mistakeCapacity - current)
+    allowedNew = Math.min(opts.errors.length, remaining)
+    if (allowedNew === 0) {
+      console.warn(
+        `[mistakes] User ${opts.userId} hit free capacity (${current}/${subCtx.features.mistakeCapacity}), skipping save`
+      )
+      return
+    }
+  }
+
+  const records = opts.errors.slice(0, allowedNew).map((err) => ({
     user_id: opts.userId,
     type: err.type as MistakeType,
     user_said: err.user_said,

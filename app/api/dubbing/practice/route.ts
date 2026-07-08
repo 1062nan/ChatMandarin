@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { getConversationResponse } from '@/lib/ai/deepseek'
+import { getSubscriptionContext } from '@/lib/subscription/tier'
 
 export const runtime = 'nodejs'
 
@@ -23,6 +24,19 @@ export async function POST(request: NextRequest) {
       .eq('auth_id', user.id)
       .single()
     if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+
+    // 配音是 Plus 专属功能
+    const subCtx = await getSubscriptionContext(profile.id)
+    if (!subCtx.features.dubbing.allowed) {
+      return NextResponse.json(
+        {
+          error: 'Dubbing is a Plus feature. Upgrade to unlock.',
+          upgrade_required: true,
+          plan: subCtx.plan,
+        },
+        { status: 403 }
+      )
+    }
 
     const formData = await request.formData()
     const audioFile = formData.get('audio') as File

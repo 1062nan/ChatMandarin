@@ -27,15 +27,23 @@ export async function POST(request: NextRequest) {
 
     const supabase = createSupabaseAdmin()
 
-    // 重放保护：用事件 ID 去重
-    const eventId = event.meta?.event_id || event.data?.id || ''
+    // 重放保护：独立 webhook_events 表，event_id 唯一约束
+    const eventId =
+      event.meta?.event_id || `${parsed.eventName}_${parsed.subscriptionId}_${Date.now()}`
     if (eventId) {
-      const { data: existing } = await supabase
-        .from('subscriptions')
-        .select('lemon_squeezy_id')
-        .eq('lemon_squeezy_id', `event_${eventId}`)
+      const { data: inserted, error: insertErr } = await supabase
+        .from('webhook_events')
+        .insert({
+          event_id: String(eventId),
+          event_name: parsed.eventName || '',
+          subscription_id: parsed.subscriptionId || '',
+        })
+        .select('event_id')
         .maybeSingle()
-      if (existing) {
+
+      // 唯一约束冲突 = 已处理过 = 重放
+      if (insertErr || !inserted) {
+        console.log(`Webhook duplicate event_id: ${eventId}`)
         return NextResponse.json({ received: true, duplicate: true })
       }
     }

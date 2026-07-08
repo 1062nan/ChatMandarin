@@ -10,20 +10,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect('/login')
   }
 
-  // 获取用户 profile + subscription
-  const [{ data: profile }, { data: subscription }] = await Promise.all([
-    supabase.from('profiles').select('*').eq('auth_id', user.id).single(),
-    supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('user_id', (await supabase.from('profiles').select('id').eq('auth_id', user.id).single()).data?.id)
-      .eq('status', 'active')
-      .single()
-  ])
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('id, display_name')
+    .eq('auth_id', user.id)
+    .single()
+
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('plan, status')
+    .eq('user_id', profile?.id)
+    .eq('status', 'active')
+    .maybeSingle()
+
+  const plan = (subscription?.plan as 'free' | 'plus' | 'pro') || 'free'
 
   return (
     <div className="min-h-screen bg-background">
-      <AppNavbar />
+      <AppNavbar plan={plan} />
       <main className="md:pl-64">
         <div className="mx-auto max-w-6xl px-4 py-8 md:px-8 md:py-12">
           {children}

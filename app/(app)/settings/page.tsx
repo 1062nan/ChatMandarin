@@ -31,7 +31,11 @@ export default async function SettingsPage() {
   return (
     <div className="max-w-3xl space-y-6">
       <SettingsClient profile={profile} />
-      <VoicePicker currentVoice={profile.tts_voice_type || 'BV700_streaming'} profileId={profile.id} />
+      <VoicePicker
+        currentVoice={profile.tts_voice_type || 'BV700_streaming'}
+        profileId={profile.id}
+        plan={(subscription?.plan as 'free' | 'plus' | 'pro') || 'free'}
+      />
       <UpgradeSection currentPlan={subscription?.plan || 'free'} />
     </div>
   )

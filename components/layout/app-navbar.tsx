@@ -19,11 +19,17 @@ const navItems = [
   { href: '/settings', label: 'Settings', icon: Settings }
 ]
 
-export function AppNavbar() {
+export function AppNavbar({ plan = 'free' }: { plan?: 'free' | 'plus' | 'pro' }) {
   const pathname = usePathname()
   const router = useRouter()
   const [mobileOpen, setMobileOpen] = useState(false)
   const supabase = getSupabaseClient()
+
+  const planBadge = {
+    free: { label: 'Free', cls: 'bg-muted text-muted-foreground' },
+    plus: { label: 'Plus', cls: 'bg-vermilion/15 text-vermilion' },
+    pro: { label: 'Pro', cls: 'bg-gold/20 text-gold' },
+  }[plan]
 
   async function handleSignOut() {
     await supabase.auth.signOut()
@@ -64,6 +70,23 @@ export function AppNavbar() {
         </nav>
 
         <div className="border-t p-3">
+          <Link
+            href="/settings"
+            className="mb-2 flex items-center justify-between rounded-md px-3 py-2 text-xs hover:bg-accent"
+          >
+            <span className="text-muted-foreground">Plan</span>
+            <span className={cn('rounded-full px-2 py-0.5 font-medium', planBadge.cls)}>
+              {planBadge.label}
+            </span>
+          </Link>
+          {plan === 'free' && (
+            <Link
+              href="/settings"
+              className="mb-2 block rounded-md bg-vermilion/10 px-3 py-2 text-center text-xs font-medium text-vermilion hover:bg-vermilion/20"
+            >
+              ⚡ Upgrade to Plus
+            </Link>
+          )}
           <Button
             variant="ghost"
             size="sm"

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { synthesizeSpeech } from '@/lib/ai/volcengine-tts'
+import { getSubscriptionContext, consumeQuota } from '@/lib/subscription/tier'
 
 export const runtime = 'nodejs'
 
@@ -23,6 +24,21 @@ export async function POST(request: NextRequest) {
       .eq('auth_id', user.id)
       .single()
     if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+
+    // 订阅 + 配额检查（free: 5/天；plus/pro 无限）
+    const subCtx = await getSubscriptionContext(profile.id)
+    const quotaCheck = await consumeQuota(subCtx, profile.id, 'shadowing')
+    if (!quotaCheck.ok) {
+      return NextResponse.json(
+        {
+          error: 'Daily shadowing limit reached. Upgrade for unlimited practice.',
+          upgrade_required: true,
+          remaining: quotaCheck.remaining,
+          plan: subCtx.plan,
+        },
+        { status: 429 }
+      )
+    }
 
     const formData = await request.formData()
     const audioFile = formData.get('audio') as File

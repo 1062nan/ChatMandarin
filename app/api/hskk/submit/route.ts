@@ -30,6 +30,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { getHSKKScore } from '@/lib/ai/deepseek'
 import { buildHSKKPrompt } from '@/lib/ai/prompts'
+import { getSubscriptionContext, consumeQuota } from '@/lib/subscription/tier'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -57,31 +58,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    // 3. 检查订阅（HSKK 模考仅付费用户）
-    const { data: sub } = await supabase
-      .from('subscriptions')
-      .select('plan, status')
-      .eq('user_id', profile.id)
-      .eq('status', 'active')
-      .single()
-
-    const plan = sub?.plan || 'free'
-    if (plan === 'free') {
-      // 免费用户检查每日限额
-      const today = new Date().toISOString().split('T')[0]
-      const { data: usage } = await supabase
-        .from('usage_stats')
-        .select('hskk_count')
-        .eq('user_id', profile.id)
-        .eq('date', today)
-        .single()
-
-      if (usage && usage.hskk_count >= 1) {
-        return NextResponse.json(
-          { error: 'Free tier allows 1 HSKK mock test per day. Upgrade for unlimited.', upgrade_required: true },
-          { status: 429 }
-        )
+    // 3. 订阅 + 配额检查（free: 1/天 + 1/月；plus: 3/月；pro: 无限）
+    const subCtx = await getSubscriptionContext(profile.id)
+    const quotaCheck = await consumeQuota(subCtx, profile.id, 'hskk')
+    if (!quotaCheck.ok) {
+      const messages: Record<string, string> = {
+        daily_exceeded: 'Daily HSKK limit reached. Upgrade for more.',
+        monthly_exceeded: 'Monthly HSKK limit reached. Upgrade to Pro for unlimited.',
       }
+      return NextResponse.json(
+        {
+          error: messages[quotaCheck.reason || 'daily_exceeded'],
+          upgrade_required: true,
+          limit_type: quotaCheck.reason,
+          remaining: quotaCheck.remaining,
+          plan: subCtx.plan,
+        },
+        { status: 429 }
+      )
     }
 
     // 4. 解析请求
