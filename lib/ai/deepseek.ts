@@ -4,6 +4,8 @@
  * https://api.deepseek.com/v1/chat/completions
  */
 
+import { jsonrepair } from 'jsonrepair'
+
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY
 
@@ -120,24 +122,46 @@ export async function getConversationResponse(
     )
   }
 
-  // 尝试多种方式解析 JSON
+  // 多层 JSON 解析：
+  // 1. JSON.parse（标准）
+  // 2. markdown code fence 提取
+  // 3. 第一个 { 到最后一个 } 子串
+  // 4. jsonrepair 修复 LLM 常见错误（缺引号、缺括号、尾随逗号、混入文字等）
   const tryParse = (text: string): ConversationResponse | null => {
+    // 标准 parse
     try {
       return JSON.parse(text) as ConversationResponse
-    } catch {
-      // markdown code fence
-      const m = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-      if (m) {
-        try { return JSON.parse(m[1]) as ConversationResponse } catch {}
-      }
-      // 第一个 { 到最后一个 }
-      const s = text.indexOf('{')
-      const e = text.lastIndexOf('}')
-      if (s !== -1 && e !== -1 && e > s) {
-        try { return JSON.parse(text.substring(s, e + 1)) as ConversationResponse } catch {}
-      }
-      return null
+    } catch {}
+
+    // markdown code fence
+    const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+    if (fenceMatch) {
+      try { return JSON.parse(fenceMatch[1]) as ConversationResponse } catch {}
     }
+
+    // 子串：第一个 { 到最后一个 }
+    const s = text.indexOf('{')
+    const e = text.lastIndexOf('}')
+    if (s !== -1 && e !== -1 && e > s) {
+      const substr = text.substring(s, e + 1)
+      try { return JSON.parse(substr) as ConversationResponse } catch {}
+    }
+
+    // jsonrepair：修复损坏的 JSON
+    try {
+      const repaired = jsonrepair(text)
+      return JSON.parse(repaired) as ConversationResponse
+    } catch {}
+
+    // 子串 + jsonrepair
+    if (s !== -1 && e !== -1 && e > s) {
+      try {
+        const repaired = jsonrepair(text.substring(s, e + 1))
+        return JSON.parse(repaired) as ConversationResponse
+      } catch {}
+    }
+
+    return null
   }
 
   const parsed = tryParse(content)
@@ -149,11 +173,10 @@ export async function getConversationResponse(
     return parsed
   }
 
-  // 最后 fallback：DeepSeek 返回了纯文本（没包 JSON）
-  // 直接把它当成 reply 返回，errors 空数组，scores 给中性分数
-  // 对话体验保住了，只是这一轮没纠错/评分
+  // 最后 fallback：DeepSeek 完全没返回 JSON 结构（纯自然语言）
+  // 直接当 reply，对话能继续
   console.warn(
-    '[DeepSeek] content is not JSON, using plaintext fallback. finish_reason:',
+    '[DeepSeek] content is not JSON even after jsonrepair, using plaintext fallback. finish_reason:',
     result.finishReason,
     'first 80 chars:',
     content.substring(0, 80)
@@ -214,39 +237,59 @@ export async function getHSKKScore(
   try {
     return JSON.parse(content) as HSKKScoreResponse
   } catch {
+    // markdown fence
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[1]) as HSKKScoreResponse
+      try { return JSON.parse(jsonMatch[1]) as HSKKScoreResponse } catch {}
     }
-    throw new Error(`Failed to parse HSKK score response: ${content.substring(0, 200)}`)
+    // 子串
+    const s = content.indexOf('{')
+    const e = content.lastIndexOf('}')
+    if (s !== -1 && e !== -1 && e > s) {
+      try { return JSON.parse(content.substring(s, e + 1)) as HSKKScoreResponse } catch {}
+    }
+    // jsonrepair
+    try {
+      const repaired = jsonrepair(content)
+      return JSON.parse(repaired) as HSKKScoreResponse
+    } catch {}
+    throw new Error(`Failed to parse HSKK score response after all repair attempts. First 300 chars: ${content.substring(0, 300)}`)
   }
 }
 
 /**
- * 提取 JSON（容错处理）
+ * 提取 JSON（容错处理，多层 + jsonrepair）
  */
 export function safeParseJSON(text: string): any | null {
+  // 标准 parse
   try {
     return JSON.parse(text)
-  } catch {
-    const match = text.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (match) {
-      try {
-        return JSON.parse(match[1])
-      } catch {
-        return null
-      }
-    }
-    // 尝试找第一个 { 和最后一个 }
-    const start = text.indexOf('{')
-    const end = text.lastIndexOf('}')
-    if (start !== -1 && end !== -1) {
-      try {
-        return JSON.parse(text.substring(start, end + 1))
-      } catch {
-        return null
-      }
-    }
-    return null
+  } catch {}
+
+  // markdown fence
+  const match = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+  if (match) {
+    try { return JSON.parse(match[1]) } catch {}
   }
+
+  // 子串
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start !== -1 && end !== -1 && end > start) {
+    try { return JSON.parse(text.substring(start, end + 1)) } catch {}
+  }
+
+  // jsonrepair
+  try {
+    return JSON.parse(jsonrepair(text))
+  } catch {}
+
+  // 子串 + jsonrepair
+  if (start !== -1 && end !== -1 && end > start) {
+    try {
+      return JSON.parse(jsonrepair(text.substring(start, end + 1)))
+    } catch {}
+  }
+
+  return null
 }
