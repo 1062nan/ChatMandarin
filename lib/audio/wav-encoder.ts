@@ -5,8 +5,6 @@
  * Worklet processor 文件：/public/audio-recorder-worklet.js
  */
 
-let workletModulePromise: Promise<void> | null = null
-
 /**
  * 将 Float32Array PCM 数据编码为 WAV Blob
  */
@@ -91,27 +89,17 @@ export class AudioRecorder {
 
   /**
    * 预加载 worklet 模块（页面空闲时调用，避免首次录音卡顿）
-   * 返回是否成功
+   * 注意：每个 AudioContext 必须独立 addModule，浏览器内部会去重，所以这里只是 warm-up
    */
   static async preload(): Promise<boolean> {
-    if (workletModulePromise) {
-      try {
-        await workletModulePromise
-        return true
-      } catch {
-        return false
-      }
-    }
     try {
       const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext
       const ctx = new Ctx()
-      workletModulePromise = ctx.audioWorklet.addModule('/audio-recorder-worklet.js')
-      await workletModulePromise
+      await ctx.audioWorklet.addModule('/audio-recorder-worklet.js')
       console.log('[AudioRecorder] preload OK')
       ctx.close()
       return true
     } catch (e) {
-      workletModulePromise = null
       console.error('[AudioRecorder] preload FAILED:', e)
       return false
     }
@@ -126,10 +114,13 @@ export class AudioRecorder {
 
     console.log('[AudioRecorder] start() called')
 
-    // 1. getUserMedia
+    // 1. getUserMedia —— 显式指定 channelCount:1，部分设备/浏览器
+    //    在多通道默认配置下会返回静音 stream
     try {
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
+          channelCount: 1,
+          sampleRate: 48000,  // 让浏览器用默认采样率，避免它降采样到 16k 时出问题
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
@@ -177,12 +168,9 @@ export class AudioRecorder {
       }
     }
 
-    // 3. AudioWorklet 模块
+    // 3. AudioWorklet 模块（每个 AudioContext 必须独立 addModule）
     try {
-      if (!workletModulePromise) {
-        workletModulePromise = this.audioContext.audioWorklet.addModule('/audio-recorder-worklet.js')
-      }
-      await workletModulePromise
+      await this.audioContext.audioWorklet.addModule('/audio-recorder-worklet.js')
       console.log('[AudioRecorder] audioWorklet module loaded')
     } catch (e) {
       console.error('[AudioRecorder] audioWorklet addModule FAILED:', e)
