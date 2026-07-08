@@ -63,34 +63,61 @@ export async function getConversationResponse(
     throw new Error('DEEPSEEK_API_KEY is not configured')
   }
 
-  const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages
-      ],
-      temperature: options?.temperature ?? 0.7,
-      max_tokens: options?.maxTokens ?? 800,
-      response_format: { type: 'json_object' }
+  const callDeepSeek = async (useJsonMode: boolean) => {
+    const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages,
+        ],
+        temperature: options?.temperature ?? 0.7,
+        max_tokens: options?.maxTokens ?? 1500,
+        ...(useJsonMode ? { response_format: { type: 'json_object' } } : {}),
+      }),
     })
-  })
 
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`DeepSeek API error (${response.status}): ${error}`)
+    if (!response.ok) {
+      const error = await response.text()
+      throw new Error(`DeepSeek API error (${response.status}): ${error}`)
+    }
+
+    const data = await response.json()
+    const choice = data.choices?.[0]
+    const content: string | undefined = choice?.message?.content
+    const finishReason: string | undefined = choice?.finish_reason
+    const usage = data.usage
+
+    console.log('[DeepSeek] finish_reason:', finishReason, 'content_len:', content?.length || 0, 'usage:', usage)
+
+    return { content, finishReason, usage }
   }
 
-  const data = await response.json()
-  const content = data.choices[0]?.message?.content
+  // 第一次尝试：json_object 模式
+  let result
+  try {
+    result = await callDeepSeek(true)
+  } catch (e) {
+    console.error('[DeepSeek] first call failed:', e)
+    throw e
+  }
 
-  if (!content) {
-    throw new Error('DeepSeek returned empty response')
+  // 如果返回空/纯空格，重试一次（不开 json_object 模式）
+  if (!result.content || result.content.trim().length === 0) {
+    console.warn('[DeepSeek] empty content, retrying without json_object mode. finish_reason:', result.finishReason)
+    result = await callDeepSeek(false)
+  }
+
+  const content = result.content || ''
+  if (content.trim().length === 0) {
+    throw new Error(
+      `DeepSeek returned empty content twice. Last finish_reason: ${result.finishReason}, usage: ${JSON.stringify(result.usage)}`
+    )
   }
 
   try {
@@ -99,9 +126,23 @@ export async function getConversationResponse(
     // 尝试从 markdown code fence 中提取 JSON
     const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[1]) as ConversationResponse
+      try {
+        return JSON.parse(jsonMatch[1]) as ConversationResponse
+      } catch (e) {
+        throw new Error(`Failed to parse JSON from code fence: ${(e as Error).message}. Raw: ${content.substring(0, 300)}`)
+      }
     }
-    throw new Error(`Failed to parse DeepSeek response as JSON: ${content.substring(0, 200)}`)
+    // 尝试找第一个 { 和最后一个 }
+    const start = content.indexOf('{')
+    const end = content.lastIndexOf('}')
+    if (start !== -1 && end !== -1 && end > start) {
+      try {
+        return JSON.parse(content.substring(start, end + 1)) as ConversationResponse
+      } catch (e) {
+        throw new Error(`Failed to parse JSON substring: ${(e as Error).message}. Raw: ${content.substring(0, 300)}`)
+      }
+    }
+    throw new Error(`DeepSeek returned non-JSON content. finish_reason=${result.finishReason}. First 300 chars: ${content.substring(0, 300)}`)
   }
 }
 
