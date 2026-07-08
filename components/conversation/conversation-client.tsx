@@ -140,11 +140,24 @@ export function ConversationClient({
         }
       }, 1200)
     } catch (err) {
-      toast.error('Cannot access microphone. Please check permissions.')
-      setError(
-        '麦克风无法访问。请点击浏览器地址栏左侧的 🔒 / 麦克风 图标，' +
-          '允许麦克风权限并刷新页面。'
-      )
+      const msg = (err as Error)?.message || ''
+      console.error('[Conversation] start recording failed:', err)
+      // 精准区分错误类型
+      if (msg.includes('permission') || msg.includes('denied') || msg.includes('NotAllowed')) {
+        toast.error('麦克风权限被拒绝。请到浏览器地址栏左侧 🔒 改权限。')
+        setError(
+          '麦克风权限被拒绝。请点击浏览器地址栏左侧 🔒 图标 → 允许麦克风 → 刷新页面。'
+        )
+      } else if (msg.includes('NotFound')) {
+        toast.error('没找到麦克风设备。')
+        setError('系统没检测到麦克风。请插上耳机/麦克风后重试。')
+      } else if (msg.includes('AudioWorklet') || msg.includes('worklet')) {
+        toast.error('浏览器音频模块加载失败，请刷新页面重试。')
+        setError('音频模块加载失败，请打开 F12 Console 看错误，并刷新页面。')
+      } else {
+        toast.error('录音启动失败：' + msg)
+        setError('录音启动失败：' + msg + '。请打开 F12 Console 查看详细错误。')
+      }
     }
   }, [conversationId, state, audioRecorder])
 

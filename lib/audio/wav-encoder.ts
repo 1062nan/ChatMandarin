@@ -1,12 +1,8 @@
 /**
- * WAV 编码器 + AudioWorklet 录音器
+ * WAV 编码 + AudioWorklet 录音器
  *
- * 关键设计：
- * 1. 用 AudioWorkletNode（替代废弃的 ScriptProcessorNode）
- * 2. AudioWorklet processor 文件在 /public/audio-recorder-worklet.js
- * 3. 不强制 sampleRate（让浏览器用默认），录音后 OfflineAudioContext 重采样到 16k
- * 4. start() 后立即 await audioContext.resume()
- * 5. 加详细 console.log 帮助排查
+ * 唯一实现：AudioWorkletNode（替代废弃的 ScriptProcessorNode）
+ * Worklet processor 文件：/public/audio-recorder-worklet.js
  */
 
 let workletModulePromise: Promise<void> | null = null
@@ -59,7 +55,6 @@ async function resample(samples: Float32Array, fromRate: number, toRate: number)
   const duration = samples.length / fromRate
   const offline = new OfflineAudioContext(1, Math.ceil(duration * toRate), toRate)
   const buffer = offline.createBuffer(1, samples.length, fromRate)
-  // 复制到独立的 ArrayBuffer，避免 TS ArrayBufferLike 不匹配
   const copy = new Float32Array(samples)
   buffer.copyToChannel(copy as Float32Array<ArrayBuffer>, 0)
   const src = offline.createBufferSource()
@@ -79,7 +74,7 @@ export interface RecorderDiagnostics {
 }
 
 /**
- * 浏览器麦克风录音器（基于 AudioWorklet）
+ * 浏览器麦克风录音器（AudioWorklet）
  */
 export class AudioRecorder {
   private audioContext: AudioContext | null = null
@@ -94,6 +89,34 @@ export class AudioRecorder {
 
   onAudioLevel?: (level: number) => void
 
+  /**
+   * 预加载 worklet 模块（页面空闲时调用，避免首次录音卡顿）
+   * 返回是否成功
+   */
+  static async preload(): Promise<boolean> {
+    if (workletModulePromise) {
+      try {
+        await workletModulePromise
+        return true
+      } catch {
+        return false
+      }
+    }
+    try {
+      const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext
+      const ctx = new Ctx()
+      workletModulePromise = ctx.audioWorklet.addModule('/audio-recorder-worklet.js')
+      await workletModulePromise
+      console.log('[AudioRecorder] preload OK')
+      ctx.close()
+      return true
+    } catch (e) {
+      workletModulePromise = null
+      console.error('[AudioRecorder] preload FAILED:', e)
+      return false
+    }
+  }
+
   async start(): Promise<void> {
     if (this.isRecording) return
 
@@ -101,8 +124,10 @@ export class AudioRecorder {
       throw new Error('Browser does not support microphone access')
     }
 
+    console.log('[AudioRecorder] start() called')
+
+    // 1. getUserMedia
     try {
-      console.log('[AudioRecorder] requesting getUserMedia...')
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -110,50 +135,66 @@ export class AudioRecorder {
           autoGainControl: true,
         },
       })
-      console.log(
-        '[AudioRecorder] getUserMedia OK, tracks:',
-        this.mediaStream.getTracks().map((t) => ({
-          kind: t.kind,
-          label: t.label,
-          enabled: t.enabled,
-          muted: t.muted,
-          state: t.readyState,
-        }))
-      )
-
-      const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext
-      this.audioContext = new Ctx()
-      console.log(
-        '[AudioRecorder] AudioContext state:',
-        this.audioContext.state,
-        'sampleRate:',
-        this.audioContext.sampleRate
-      )
-
-      if (this.audioContext.state === 'suspended') {
-        try {
-          await this.audioContext.resume()
-          console.log('[AudioRecorder] resumed, state:', this.audioContext.state)
-        } catch (e) {
-          console.warn('[AudioRecorder] resume failed:', e)
-        }
+    } catch (err) {
+      const msg = (err as Error)?.message || ''
+      console.error('[AudioRecorder] getUserMedia failed:', err)
+      if (msg.includes('denied') || msg.includes('NotAllowed') || msg.includes('Permission')) {
+        throw new Error('Microphone permission denied')
       }
+      if (msg.includes('NotFound') || msg.includes('DevicesNotFoundError')) {
+        throw new Error('No microphone device found')
+      }
+      throw new Error(`getUserMedia failed: ${msg}`)
+    }
 
-      // 加载 AudioWorklet 模块（缓存 Promise 避免重复加载）
+    console.log(
+      '[AudioRecorder] getUserMedia OK, tracks:',
+      this.mediaStream.getTracks().map((t) => ({
+        kind: t.kind,
+        label: t.label,
+        enabled: t.enabled,
+        muted: t.muted,
+        state: t.readyState,
+      }))
+    )
+
+    // 2. AudioContext
+    const Ctx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext
+    this.audioContext = new Ctx()
+    console.log(
+      '[AudioRecorder] AudioContext state:',
+      this.audioContext.state,
+      'sampleRate:',
+      this.audioContext.sampleRate
+    )
+
+    if (this.audioContext.state === 'suspended') {
+      try {
+        await this.audioContext.resume()
+        console.log('[AudioRecorder] resumed, state:', this.audioContext.state)
+      } catch (e) {
+        console.warn('[AudioRecorder] resume failed:', e)
+      }
+    }
+
+    // 3. AudioWorklet 模块
+    try {
       if (!workletModulePromise) {
         workletModulePromise = this.audioContext.audioWorklet.addModule('/audio-recorder-worklet.js')
       }
-      try {
-        await workletModulePromise
-        console.log('[AudioRecorder] audioWorklet module loaded')
-      } catch (e) {
-        console.error('[AudioRecorder] audioWorklet addModule failed:', e)
-        throw new Error('AudioWorklet load failed: ' + (e as Error).message)
-      }
+      await workletModulePromise
+      console.log('[AudioRecorder] audioWorklet module loaded')
+    } catch (e) {
+      console.error('[AudioRecorder] audioWorklet addModule FAILED:', e)
+      this.cleanup()
+      throw new Error(
+        `AudioWorklet load failed (url=/audio-recorder-worklet.js): ${(e as Error).message}`
+      )
+    }
 
+    // 4. 连接
+    try {
       this.source = this.audioContext.createMediaStreamSource(this.mediaStream)
-
-      // AudioWorkletNode
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-recorder-processor', {
         numberOfInputs: 1,
         numberOfOutputs: 1,
@@ -167,9 +208,8 @@ export class AudioRecorder {
         if (msg?.type !== 'audio' || !(msg.samples instanceof Float32Array)) return
 
         processCount++
-        const input = msg.samples as Float32Array
+        const input = msg.samples
 
-        // 前 3 次回调打印诊断
         if (processCount <= 3) {
           let max = 0
           let sum = 0
@@ -193,32 +233,24 @@ export class AudioRecorder {
         }
       }
 
-      // 通知 worklet 开始录音
       this.workletNode.port.postMessage({ type: 'start' })
 
-      // 连接：source → worklet → silentGain(0) → destination
-      // silentGain=0 防止扬声器啸叫，但 worklet 仍能收到 input
+      // source → worklet → silentGain(0) → destination
+      // silentGain=0 防啸叫但保持 worklet 处于活跃处理链
       this.source.connect(this.workletNode)
-      const silentGain = this.audioContext.createGain()
-      silentGain.gain.value = 0
-      this.workletNode.connect(silentGain)
-      silentGain.connect(this.audioContext.destination)
-      this.silentGain = silentGain
+      this.silentGain = this.audioContext.createGain()
+      this.silentGain.gain.value = 0
+      this.workletNode.connect(this.silentGain)
+      this.silentGain.connect(this.audioContext.destination)
 
       this.isRecording = true
       this.chunks = []
       this.recordStartTs = Date.now()
-      console.log('[AudioRecorder] recording started, waiting for audio data...')
-    } catch (error) {
+      console.log('[AudioRecorder] recording started')
+    } catch (e) {
+      console.error('[AudioRecorder] setup failed:', e)
       this.cleanup()
-      const msg = (error as Error)?.message || String(error)
-      if (msg.includes('Permission') || msg.includes('denied') || msg.includes('NotAllowed')) {
-        throw new Error('Microphone permission denied.')
-      }
-      if (msg.includes('NotFound') || msg.includes('DevicesNotFoundError')) {
-        throw new Error('No microphone found.')
-      }
-      throw new Error(`Failed to access microphone: ${msg}`)
+      throw new Error(`AudioWorklet setup failed: ${(e as Error).message}`)
     }
   }
 
@@ -230,11 +262,8 @@ export class AudioRecorder {
 
     this.isRecording = false
 
-    // 通知 worklet 停止
     if (this.workletNode) {
-      try {
-        this.workletNode.port.postMessage({ type: 'stop' })
-      } catch {}
+      try { this.workletNode.port.postMessage({ type: 'stop' }) } catch {}
     }
 
     const contextSampleRate = this.audioContext?.sampleRate || this.targetSampleRate
@@ -319,6 +348,5 @@ export class AudioRecorder {
       try { this.audioContext.close() } catch {}
       this.audioContext = null
     }
-    // 不重置 workletModulePromise —— 模块可以复用
   }
 }
