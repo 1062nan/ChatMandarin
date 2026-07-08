@@ -120,29 +120,55 @@ export async function getConversationResponse(
     )
   }
 
-  try {
-    return JSON.parse(content) as ConversationResponse
-  } catch {
-    // 尝试从 markdown code fence 中提取 JSON
-    const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/)
-    if (jsonMatch) {
-      try {
-        return JSON.parse(jsonMatch[1]) as ConversationResponse
-      } catch (e) {
-        throw new Error(`Failed to parse JSON from code fence: ${(e as Error).message}. Raw: ${content.substring(0, 300)}`)
+  // 尝试多种方式解析 JSON
+  const tryParse = (text: string): ConversationResponse | null => {
+    try {
+      return JSON.parse(text) as ConversationResponse
+    } catch {
+      // markdown code fence
+      const m = text.match(/```(?:json)?\s*([\s\S]*?)```/)
+      if (m) {
+        try { return JSON.parse(m[1]) as ConversationResponse } catch {}
       }
-    }
-    // 尝试找第一个 { 和最后一个 }
-    const start = content.indexOf('{')
-    const end = content.lastIndexOf('}')
-    if (start !== -1 && end !== -1 && end > start) {
-      try {
-        return JSON.parse(content.substring(start, end + 1)) as ConversationResponse
-      } catch (e) {
-        throw new Error(`Failed to parse JSON substring: ${(e as Error).message}. Raw: ${content.substring(0, 300)}`)
+      // 第一个 { 到最后一个 }
+      const s = text.indexOf('{')
+      const e = text.lastIndexOf('}')
+      if (s !== -1 && e !== -1 && e > s) {
+        try { return JSON.parse(text.substring(s, e + 1)) as ConversationResponse } catch {}
       }
+      return null
     }
-    throw new Error(`DeepSeek returned non-JSON content. finish_reason=${result.finishReason}. First 300 chars: ${content.substring(0, 300)}`)
+  }
+
+  const parsed = tryParse(content)
+  if (parsed) {
+    // 确保 reply 字段有内容
+    if (!parsed.reply && typeof parsed === 'object') {
+      parsed.reply = content.substring(0, 100)
+    }
+    return parsed
+  }
+
+  // 最后 fallback：DeepSeek 返回了纯文本（没包 JSON）
+  // 直接把它当成 reply 返回，errors 空数组，scores 给中性分数
+  // 对话体验保住了，只是这一轮没纠错/评分
+  console.warn(
+    '[DeepSeek] content is not JSON, using plaintext fallback. finish_reason:',
+    result.finishReason,
+    'first 80 chars:',
+    content.substring(0, 80)
+  )
+  return {
+    reply: content.trim(),
+    errors: [],
+    scores: {
+      pronunciation: 80,
+      grammar: 80,
+      word_choice: 80,
+      fluency: 80,
+    },
+    conversation_complete: false,
+    encouragement: undefined,
   }
 }
 
