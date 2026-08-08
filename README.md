@@ -1,160 +1,71 @@
-# ChatMandarin App
+# ChatMandarin
 
-AI Chinese tutor for HSK learners. The Next.js 15 application runs on Vercel,
-with Supabase for authentication/data and a Cloudflare Worker voice gateway for
-Volcengine ASR/TTS traffic.
+AI 中文对话辅导，针对 HSK 1-6 学习者。本仓库是 monorepo，包含产品代码、静态 landing page、营销/策略/产品文档。
 
-## Quick Start
+## 仓库结构
 
-### 1. Install dependencies
+```
+ChatMandarin/
+├── app/                  # Next.js 15 应用（Vercel + Supabase + Cloudflare Worker）
+│   ├── app/              # Next.js App Router
+│   ├── components/  lib/  public/  supabase/  workers/
+│   ├── package.json
+│   └── README.md         # app 本地启动详见此文档
+├── landing/              # 静态 landing page（Cloudflare Pages）
+│   ├── index.html
+│   ├── functions/        # Cloudflare Pages Functions（waitlist 等）
+│   └── wrangler.toml
+├── docs/
+│   ├── marketing/        # 营销启动：行动清单、X 模板、IH 长文、Waitlist/Beta/PH 手册
+│   ├── strategy/         # 策略文档：商标、内容策略框架、内容日历（Week 1 / Week 2-3）
+│   └── product/          # 产品设计：技术架构、功能设计、V2 配音设计
+├── .claude/
+│   └── skills/chatmandarin-content/   # 内容生成 skill
+└── .gitignore
+```
+
+## 快速开始
+
+### 运行 Next.js 应用
 
 ```bash
-cd D:/Wordspace/oversea/ChatMandarin/app
+cd app
 npm install
-```
-
-### 2. Configure environment
-
-Copy `.env.example` to `.env.local` and fill in values:
-
-```bash
-cp .env.example .env.local
-# Edit .env.local with your keys
-```
-
-Required keys:
-- `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase anon key
-- `SUPABASE_SERVICE_ROLE_KEY` — Supabase service role key (server only)
-
-### 3. Run database migration
-
-**Option A**: Use Supabase Dashboard SQL Editor
-1. Go to https://supabase.com/dashboard → your project → SQL Editor
-2. Copy contents of `supabase/migrations/001_init.sql`
-3. Paste → Run
-
-**Option B**: Use Supabase CLI
-```bash
-npx supabase db push
-```
-
-### 4. Configure Supabase Auth
-
-In Supabase Dashboard → Authentication → Providers:
-- Enable **Email** (with passwords)
-- Keep OAuth providers disabled unless their production credentials and callback URLs have been configured and tested
-- Set **Site URL**: `http://localhost:3000` (dev) or `https://app.chatmandarin.cc` (prod)
-- Add **Redirect URLs**: `http://localhost:3000/auth/callback`, `https://app.chatmandarin.cc/auth/callback`
-
-### 5. Copy static assets
-
-Copy the logo/favicon from the landing page:
-```bash
-cp ../landing/logo.svg public/
-cp ../landing/favicon.svg public/
-cp ../landing/apple-touch-icon.svg public/
-cp ../landing/og-image.svg public/
-```
-
-### 6. Run dev server
-
-```bash
+cp .env.example .env.local   # 填入密钥
 npm run dev
 ```
 
-Open http://localhost:3000
+详见 [`app/README.md`](./app/README.md)。
 
-### 7. Deploy the application to Vercel
+### 运行 landing page
 
 ```bash
-npm run type-check
-npm run lint
-npm run build
-npx vercel --prod --yes
+cd landing
+npx wrangler pages dev .
 ```
 
-The production application is served at `https://app.chatmandarin.cc`. The
-separate static landing page is served by Cloudflare Pages at
-`https://chatmandarin.cc`. The Cloudflare/OpenNext scripts remain available for
-preview and portability checks; they are not the current primary app deployment
-path.
+### 文档协作
 
-## Project Structure
+- 营销/内容：从 `docs/marketing/00_Action_Checklist.md` 开始
+- 内容策略：`docs/strategy/12_Content_Strategy_Framework.md`
+- 技术背景：`docs/product/09_Tech_Architecture_and_Product_Design.md`
 
-```
-app/
-├── app/                        # Next.js App Router
-│   ├── (app)/                  # Authenticated app
-│   │   ├── dashboard/          # Home page
-│   │   ├── conversation/       # AI conversation practice
-│   │   ├── hskk/               # HSKK mock test
-│   │   ├── mistakes/           # Mistake journal
-│   │   ├── settings/           # User settings
-│   │   └── layout.tsx          # App layout (auth guard + navbar)
-│   ├── (marketing)/            # Public pages
-│   ├── login/                  # Login page
-│   ├── signup/                 # Signup page
-│   ├── auth/callback/          # OAuth callback handler
-│   ├── api/                    # API routes
-│   ├── layout.tsx              # Root layout
-│   └── globals.css             # Global styles
-├── components/                 # React components
-│   ├── ui/                     # shadcn/ui primitives
-│   ├── auth/                   # Auth forms
-│   ├── layout/                 # Navbar, etc.
-│   └── settings/               # Settings components
-├── lib/                        # Utilities
-│   ├── supabase/               # Supabase clients (client/server/middleware)
-│   ├── db/                     # Database types + queries
-│   └── utils/                  # Helpers
-├── public/                     # Static assets
-├── supabase/                   # Database migrations
-├── .env.example                # Environment template
-├── open-next.config.ts         # OpenNext adapter config
-├── wrangler.jsonc              # Cloudflare Workers config
-├── package.json
-└── README.md
-```
+## 协作流程
 
-## Tech Stack
+1. 主分支：`main`（受保护）
+2. 功能分支命名：`feat/<short-desc>`、`docs/<short-desc>`、`fix/<short-desc>`
+3. PR 前自测：`cd app && npm run build && npm run lint`
+4. 提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/)：`feat:` / `fix:` / `docs:` / `chore:` / `refactor:`
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | Next.js 15 (App Router) |
-| UI | Tailwind CSS + shadcn/ui |
-| Auth | Supabase Auth (Email/password; OAuth only when explicitly configured) |
-| Database | Supabase Postgres |
-| Application Hosting | Vercel |
-| Landing Hosting | Cloudflare Pages |
-| Voice Gateway | Cloudflare Workers |
-| AI (LLM) | DeepSeek V3 |
-| AI (STT) | Volcengine ASR |
-| AI (TTS) | Volcengine TTS |
-| Payment | Creem (Merchant of Record) |
-| Support Email | Cloudflare Email Routing |
+## 技术栈速览
 
-## Development Status
+- **LLM**: DeepSeek V3
+- **STT/TTS**: Volcengine streaming ASR + Doubao TTS（经 Cloudflare Worker voice gateway 代理）
+- **Frontend**: Next.js 15 + Tailwind + shadcn/ui
+- **Backend**: Cloudflare Workers + Durable Objects
+- **DB/Auth**: Supabase Postgres + Supabase Auth
+- **Storage**: Cloudflare R2 + KV
+- **Payments**: Creem（MoR）
+- **Email**: Resend
 
-- [x] **Week 1**: Project scaffolding + Auth + UI skeleton
-- [x] **Week 2 (implementation)**: AI conversation core, ASR/TTS integration, audio diagnostics
-- [x] **Week 3 (implementation)**: Four-dimension feedback + mistake journal + spaced repetition
-- [x] **Week 4 (implementation)**: HSKK mock flow + learning path + scenario content
-- [x] **Week 5 (implementation)**: Checkout, webhook, cancellation, plans, and quota tracking
-- [x] **Week 6**: Production credentials, migrations, voice gateway, Live payments, public compliance pages, and launch hardening
-
-Production status verified on 2026-08-08: the landing page, login, signup,
-Privacy Policy, and Terms pages return HTTP 200. Creem Live products, production
-checkout creation, and the signed webhook path were validated on 2026-07-31.
-TypeScript and production builds pass; ESLint has no errors (legacy warnings
-remain).
-
-## Operations Documentation
-
-- [Production deployment runbook](docs/PRODUCTION_DEPLOYMENT_RUNBOOK_ZH.md)
-- [Creem payment setup](docs/CREEM_PAYMENT_SETUP_ZH.md)
-- [Production promotion plan](docs/PRODUCTION_PROMOTION_PLAN_ZH.md)
-
-## License
-
-Proprietary. © 2026 ChatMandarin.
+完整架构和单位经济见 [`docs/product/09_Tech_Architecture_and_Product_Design.md`](./docs/product/09_Tech_Architecture_and_Product_Design.md)。

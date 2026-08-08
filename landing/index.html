@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChatMandarin — AI Chinese tutor for HSK learners</title>
+<meta name="description" content="The AI conversation tutor built specifically for HSK learners. Speak Mandarin from day 1.">
+<meta property="og:title" content="ChatMandarin — AI Chinese tutor for HSK learners">
+<meta property="og:description" content="Speak Mandarin from day 1. HSK-graded AI conversation, HSKK mock test, real-time feedback.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="/og-image.svg">
+<meta name="theme-color" content="#c23b22">
+
+<!-- Favicon (现代 SVG 格式，所有现代浏览器支持) -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.svg">
+<link rel="mask-icon" href="/favicon.svg" color="#c23b22">
+<style>
+:root {
+  --ink: #1a1a1a;
+  --vermilion: #c23b22;
+  --rice: #f8f5f0;
+  --stone: #6b6b6b;
+  --jade: #4a7c59;
+  --gold: #d4a847;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--rice);
+  color: var(--ink);
+  line-height: 1.6;
+}
+.container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+/* HERO */
+.hero {
+  padding: 100px 0 80px;
+  text-align: center;
+  background: linear-gradient(180deg, var(--rice) 0%, #fff 100%);
+}
+.hero .badge {
+  display: inline-block;
+  padding: 6px 14px;
+  background: rgba(194, 59, 34, 0.1);
+  color: var(--vermilion);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 24px;
+  letter-spacing: 0.5px;
+}
+.hero h1 {
+  font-size: clamp(40px, 7vw, 72px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-bottom: 24px;
+}
+.hero h1 .accent { color: var(--vermilion); }
+.hero .subtitle {
+  font-size: 20px;
+  color: var(--stone);
+  max-width: 620px;
+  margin: 0 auto 40px;
+  line-height: 1.5;
+}
+.hero .cta-group { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.btn {
+  padding: 16px 32px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 16px;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  display: inline-block;
+  transition: all 0.2s;
+}
+.btn-primary {
+  background: var(--ink);
+  color: var(--rice);
+}
+.btn-primary:hover { background: var(--vermilion); transform: translateY(-1px); }
+.btn-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+}
+.btn-secondary:hover { background: var(--ink); color: var(--rice); }
+.trust {
+  margin-top: 40px;
+  font-size: 14px;
+  color: var(--stone);
+}
+
+/* SECTIONS */
+section { padding: 80px 0; }
+.section-title {
+  font-size: clamp(32px, 5vw, 48px);
+  font-weight: 800;
+  text-align: center;
+  margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+.section-sub {
+  text-align: center;
+  color: var(--stone);
+  font-size: 18px;
+  margin-bottom: 60px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* PAIN CARDS */
+.pain-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 32px;
+  margin-top: 48px;
+}
+.pain-card {
+  background: #fff;
+  padding: 32px;
+  border-radius: 12px;
+  border: 1px solid #e8e4dc;
+}
+.pain-card .icon { font-size: 40px; margin-bottom: 16px; }
+.pain-card h3 { font-size: 20px; margin-bottom: 12px; font-weight: 700; }
+.pain-card p { color: var(--stone); font-size: 15px; }
+
+/* FEATURES */
+.features { background: #fff; }
+.feature-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+  margin-bottom: 80px;
+}
+.feature-row:nth-child(even) .feature-content { order: 2; }
+.feature-content h3 {
+  font-size: 32px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+.feature-content p {
+  color: var(--stone);
+  font-size: 17px;
+  margin-bottom: 16px;
+}
+.feature-content .feature-num {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vermilion);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+.feature-visual {
+  background: linear-gradient(135deg, var(--rice) 0%, #fff 100%);
+  border-radius: 16px;
+  padding: 40px;
+  border: 1px solid #e8e4dc;
+  min-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--stone);
+  font-style: italic;
+}
+
+/* COMPARE TABLE */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.04);
+}
+.compare-table th, .compare-table td {
+  padding: 16px 20px;
+  text-align: left;
+  border-bottom: 1px solid #e8e4dc;
+}
+.compare-table th {
+  background: var(--ink);
+  color: var(--rice);
+  font-weight: 600;
+  font-size: 14px;
+}
+.compare-table th.highlight {
+  background: var(--vermilion);
+  color: #fff;
+}
+.compare-table td:not(:first-child) { text-align: center; }
+.compare-table .yes { color: var(--jade); font-weight: 600; }
+.compare-table .no { color: #ccc; }
+.compare-table td.highlight {
+  background: rgba(194, 59, 34, 0.05);
+  font-weight: 600;
+}
+.compare-table td.highlight.yes { color: var(--jade); }
+
+/* PRICING */
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+  margin-top: 48px;
+}
+.price-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 32px;
+  border: 1px solid #e8e4dc;
+  position: relative;
+}
+.price-card.featured {
+  border-color: var(--vermilion);
+  border-width: 2px;
+}
+.price-card .tag {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--vermilion);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.price-name { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.price-amount { font-size: 40px; font-weight: 800; margin-bottom: 4px; }
+.price-period { color: var(--stone); font-size: 14px; margin-bottom: 24px; }
+.price-features { list-style: none; margin-bottom: 24px; }
+.price-features li {
+  padding: 8px 0;
+  font-size: 14px;
+  color: var(--stone);
+}
+.price-features li::before { content: "✓ "; color: var(--jade); font-weight: 600; }
+
+/* FOUNDER */
+.founder {
+  background: var(--ink);
+  color: var(--rice);
+  padding: 100px 0;
+}
+.founder-content {
+  max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+}
+.founder h2 {
+  font-size: 36px;
+  font-weight: 800;
+  margin-bottom: 24px;
+}
+.founder p {
+  font-size: 18px;
+  line-height: 1.7;
+  margin-bottom: 16px;
+  color: rgba(248, 245, 240, 0.85);
+}
+.founder .signature {
+  margin-top: 32px;
+  font-style: italic;
+  color: var(--gold);
+}
+
+/* FAQ */
+.faq-list { max-width: 720px; margin: 0 auto; }
+.faq-item {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 12px;
+  border: 1px solid #e8e4dc;
+}
+.faq-item h4 { font-size: 17px; margin-bottom: 8px; font-weight: 600; }
+.faq-item p { color: var(--stone); font-size: 15px; }
+
+/* FOOTER */
+footer {
+  background: var(--ink);
+  color: var(--rice);
+  padding: 60px 0 30px;
+  text-align: center;
+}
+footer .footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+footer a { color: var(--rice); text-decoration: none; opacity: 0.7; }
+footer a:hover { opacity: 1; }
+footer .copyright { font-size: 13px; opacity: 0.5; }
+
+@media (max-width: 768px) {
+  .feature-row { grid-template-columns: 1fr; gap: 32px; }
+  .feature-row:nth-child(even) .feature-content { order: 0; }
+  .hero { padding: 60px 0 40px; }
+  section { padding: 60px 0; }
+}
+
+/* CHINESE TYPOGRAPHY TOUCH */
+.cn { font-family: 'Noto Serif SC', 'Songti SC', serif; }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="container">
+    <a href="/" class="brand-logo" style="display:inline-flex;align-items:center;gap:10px;text-decoration:none;margin-bottom:32px;">
+      <img src="/logo.svg" alt="ChatMandarin" style="height:40px;width:auto;">
+    </a>
+    <div style="clear:both;"></div>
+    <span class="badge">AI-powered Mandarin speaking practice</span>
+    <h1>Chat with AI.<br><span class="accent">Speak Mandarin.</span></h1>
+    <p class="subtitle">The AI conversation tutor built specifically for HSK learners. Practice speaking from day 1 — no more <em>"can read but can't speak"</em>.</p>
+    <div class="cta-group">
+      <a href="https://app.chatmandarin.cc/signup" class="btn btn-primary">Start Free</a>
+      <a href="#how" class="btn btn-secondary">See how it works ↓</a>
+    </div>
+    <p class="trust">Built by an independent developer · AI conversation, speech recognition, and natural Chinese voices</p>
+  </div>
+</section>
+
+<!-- PAIN POINTS -->
+<section id="about">
+  <div class="container">
+    <h2 class="section-title">The HSK struggle is real.</h2>
+    <p class="section-sub">Speaking often needs a different kind of practice from reading and vocabulary study.</p>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <div class="icon">📚</div>
+        <h3>Practice at your level</h3>
+        <p>Choose an HSK level so conversations and exercises use an appropriate vocabulary range.</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">🤐</div>
+        <h3>Can read but can't speak</h3>
+        <p>Use guided AI conversations to practice responding aloud in common situations.</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">💸</div>
+        <h3>Practice on your schedule</h3>
+        <p>Review pronunciation, fluency, grammar, and vocabulary feedback whenever you have time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <div class="container">
+    <h2 class="section-title">Meet ChatMandarin.</h2>
+    <p class="section-sub">Built for HSK learners. Powered by AI. Designed by native speakers.</p>
+
+    <div class="feature-row">
+      <div class="feature-content">
+        <span class="feature-num">FEATURE 01</span>
+        <h3>HSK-Graded Conversation</h3>
+        <p>AI uses only vocabulary from your HSK level. HSK 3 students never see HSK 6 words. Difficulty adapts as you improve.</p>
+        <p><span class="cn">例：HSK 3 对话不会出现 HSK 6 的词汇</span></p>
+      </div>
+      <div class="feature-visual">
+        [ Conversation interface screenshot ]
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-content">
+        <span class="feature-num">FEATURE 02</span>
+        <h3>HSKK Oral Exam Mock Test</h3>
+        <p>Full simulation of the real HSKK exam: read aloud, Q&A, picture description. Get a predicted score + detailed feedback on 5 dimensions.</p>
+      </div>
+      <div class="feature-visual">
+        [ HSKK Mock Test interface ]
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-content">
+        <span class="feature-num">FEATURE 03</span>
+        <h3>Real-Time Feedback</h3>
+        <p>Practice responses receive feedback on pronunciation, grammar, vocabulary, and fluency. AI feedback may contain errors and should be used as learning guidance.</p>
+      </div>
+      <div class="feature-visual">
+        [ Real-time tone curve visualization ]
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-content">
+        <span class="feature-num">FEATURE 04</span>
+        <h3>Smart Mistake Journal</h3>
+        <p>Every mistake auto-saved. Spaced repetition brings them back at the perfect moment. Inspired by Chinese <span class="cn">错题本</span> tradition.</p>
+        <p>Review past mistakes and track what still needs practice.</p>
+      </div>
+      <div class="feature-visual">
+        [ Mistake journal interface ]
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-content">
+        <span class="feature-num">FEATURE 05</span>
+        <h3>Real-Life Scenarios</h3>
+        <p>Practice what you'll actually use: ordering food, taxi conversations, job interviews, business meetings.</p>
+        <p>Choose difficulty from HSK 1 through HSK 6.</p>
+      </div>
+      <div class="feature-visual">
+        [ Scenario picker interface ]
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TECH TRUST -->
+<section>
+  <div class="container">
+    <h2 class="section-title">AI designed for guided practice.</h2>
+    <p class="section-sub">Language and speech services work together to support Mandarin speaking exercises.</p>
+    <div class="pain-grid">
+      <div class="pain-card">
+        <div class="icon">🤖</div>
+        <h3>Guided AI Conversation</h3>
+        <p>Conversation prompts are adapted to the selected HSK level and practice scenario.</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">🎙</div>
+        <h3>Speech Recognition</h3>
+        <p>Spoken responses are transcribed and analyzed to provide learning feedback.</p>
+      </div>
+      <div class="pain-card">
+        <div class="icon">🔊</div>
+        <h3>Chinese Text-to-Speech</h3>
+        <p>Listen to generated Chinese speech and replay examples during practice.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section>
+  <div class="container" id="pricing">
+    <h2 class="section-title">Simple pricing.</h2>
+    <p class="section-sub">Start free. Upgrade when you're ready.</p>
+    <div class="pricing-grid">
+      <div class="price-card">
+        <div class="price-name">Free</div>
+        <div class="price-amount">$0</div>
+        <div class="price-period">forever</div>
+        <ul class="price-features">
+          <li>5 min AI conversation / day</li>
+          <li>1 scenario</li>
+          <li>Basic feedback</li>
+          <li>Perfect for trying it out</li>
+        </ul>
+        <a href="https://app.chatmandarin.cc/signup" class="btn btn-secondary" style="width:100%;text-align:center;">Get Started Free</a>
+      </div>
+      <div class="price-card featured">
+        <div class="price-name">Plus</div>
+        <div class="price-amount">$14.99</div>
+        <div class="price-period">USD / month · recurring subscription</div>
+        <ul class="price-features">
+          <li>Unlimited AI conversation</li>
+          <li>All scenarios</li>
+          <li>Real-time 4-dimension feedback</li>
+          <li>HSKK mock test (3/month)</li>
+          <li>Mistake journal</li>
+        </ul>
+        <a href="https://app.chatmandarin.cc/signup" class="btn btn-primary" style="width:100%;text-align:center;">Create Account to Upgrade</a>
+      </div>
+      <div class="price-card">
+        <div class="price-name">Pro</div>
+        <div class="price-amount">$29</div>
+        <div class="price-period">USD / month · recurring subscription</div>
+        <ul class="price-features">
+          <li>Everything in Plus</li>
+          <li>Unlimited HSKK mock tests</li>
+          <li>Custom voice selection</li>
+          <li>Unlimited shadowing and dubbing practice</li>
+        </ul>
+        <a href="https://app.chatmandarin.cc/signup" class="btn btn-secondary" style="width:100%;text-align:center;">Create Account to Upgrade</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section id="get-started" style="background:linear-gradient(135deg, var(--rice) 0%, #fff 100%);">
+  <div class="container">
+    <h2 class="section-title">Start practicing Mandarin.</h2>
+    <p class="section-sub">Create a free account. No payment is required for the Free plan.</p>
+    <div class="cta-group" style="margin-top:32px;">
+      <a href="https://app.chatmandarin.cc/signup" class="btn btn-primary">Create Free Account</a>
+      <a href="#pricing" class="btn btn-secondary">Review Pricing</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOUNDER -->
+<section class="founder">
+  <div class="container">
+    <div class="founder-content">
+      <h2>Built independently for Mandarin learners.</h2>
+      <p>ChatMandarin is developed by an independent software developer based in China.</p>
+      <p>The product focuses on guided speaking practice, HSK-level scenarios, HSKK-style exercises, and review tools for international Mandarin learners.</p>
+      <p>AI-generated conversations and scoring may contain errors. ChatMandarin is an educational practice tool and is not an official HSK or HSKK testing service.</p>
+      <p class="signature">— Building in public: @AllanKing2026</p>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section>
+  <div class="container">
+    <h2 class="section-title">Questions?</h2>
+    <div class="faq-list">
+      <div class="faq-item">
+        <h4>Do I need to know Chinese already?</h4>
+        <p>ChatMandarin supports HSK levels 1-6. Complete beginners can start with HSK 1 conversations — we'll guide you word by word.</p>
+      </div>
+      <div class="faq-item">
+        <h4>What does ChatMandarin focus on?</h4>
+        <p>ChatMandarin focuses on spoken Mandarin practice through AI conversations, speech feedback, shadowing, dubbing, and HSKK-style exercises.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Will the AI correct my tones?</h4>
+        <p>ChatMandarin analyzes spoken responses and provides pronunciation and fluency feedback. AI feedback can be imperfect, so use it as learning guidance rather than an official assessment.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Is this useful if I'm not taking HSK?</h4>
+        <p>Absolutely. HSK levels map to vocabulary difficulty. If you want "I can order food and have basic chats" level, that's roughly HSK 3.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Is ChatMandarin available now?</h4>
+        <p>Yes. You can create a free account and begin practicing at app.chatmandarin.cc.</p>
+      </div>
+      <div class="faq-item">
+        <h4>Is my data safe?</h4>
+        <p>Voice input is processed to provide speech features. Please review our Privacy Policy for details about data handling and third-party service providers.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="container">
+    <div style="margin-bottom:24px;">
+      <img src="/logo.svg" alt="ChatMandarin" style="height:32px;width:auto;filter:brightness(0) invert(1);opacity:0.9;">
+    </div>
+    <div class="footer-links">
+      <a href="#features">Features</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://app.chatmandarin.cc/signup">Create Account</a>
+      <a href="https://x.com/AllanKing2026">Build Log (X)</a>
+      <a href="#about">About</a>
+      <a href="https://app.chatmandarin.cc/terms">Terms</a>
+      <a href="https://app.chatmandarin.cc/privacy">Privacy</a>
+      <a href="mailto:support@chatmandarin.cc">Contact: support@chatmandarin.cc</a>
+    </div>
+    <p class="copyright">© 2026 ChatMandarin · Built with ❤️ in China, for the world · <span class="cn">为世界学中文</span></p>
+  </div>
+</footer>
+
+</body>
+</html>

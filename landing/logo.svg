@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" width="200" height="48">
+  <!-- 印章风格 Mark -->
+  <g>
+    <!-- 朱砂红圆 -->
+    <circle cx="22" cy="24" r="20" fill="#c23b22"/>
+    <!-- 内圈细节（白） -->
+    <circle cx="22" cy="24" r="17" fill="none" stroke="#fff" stroke-width="0.8" opacity="0.4"/>
+    <!-- 白色"汉"字 -->
+    <text x="22" y="32" text-anchor="middle" font-family="'Noto Serif SC', 'Songti SC', 'STSong', serif" font-size="24" font-weight="700" fill="#fff">汉</text>
+  </g>
+  <!-- Wordmark -->
+  <text x="52" y="32" font-family="Inter, -apple-system, BlinkMacSystemFont, sans-serif" font-size="22" font-weight="700" fill="#1a1a1a" letter-spacing="-0.5">
+    Chat<tspan fill="#c23b22">Mandarin</tspan>
+  </text>
+</svg>
