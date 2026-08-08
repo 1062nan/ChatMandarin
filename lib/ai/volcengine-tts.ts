@@ -5,6 +5,8 @@
  * 参考 demo：tts_http_demo.py
  */
 
+import { callVoiceGateway, usesVoiceGateway } from './voice-gateway-client'
+
 const VOLC_API_KEY = process.env.VOLCENGINE_API_KEY || ''
 const VOLC_APP_ID = process.env.VOLCENGINE_APP_ID || ''
 const TTS_ENDPOINT = 'https://openspeech.bytedance.com/api/v1/tts'
@@ -38,6 +40,20 @@ export async function synthesizeSpeech(
   speedRatio: number = 1.0,
   encoding: 'mp3' | 'wav' | 'pcm' | 'ogg_opus' = 'mp3'
 ): Promise<TTSResult> {
+  if (usesVoiceGateway()) {
+    const encoded = new TextEncoder().encode(JSON.stringify({ text, voiceType, speedRatio, encoding }))
+    const result = await callVoiceGateway<{ audioBase64: string; duration: number }>(
+      '/v1/tts',
+      encoded,
+      'application/json'
+    )
+    return {
+      audioBase64: result.audioBase64,
+      audioBuffer: base64ToArrayBuffer(result.audioBase64),
+      duration: result.duration,
+    }
+  }
+
   if (!VOLC_API_KEY) throw new Error('VOLCENGINE_API_KEY is not configured')
   if (!text || text.trim().length === 0) throw new Error('TTS text is empty')
 

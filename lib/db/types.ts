@@ -35,7 +35,8 @@ export interface Profile {
 export interface Subscription {
   id: string
   user_id: string
-  lemon_squeezy_id: string | null
+  provider_subscription_id: string | null
+  payment_provider: 'creem' | 'lemon_squeezy' | null
   plan: SubscriptionPlan
   status: SubscriptionStatus
   current_period_end: string | null

@@ -120,50 +120,58 @@ export async function updateConversationStats(conversationId: string): Promise<v
 /**
  * 结束对话
  */
-export async function endConversation(conversationId: string): Promise<void> {
+export async function endConversation(
+  conversationId: string,
+  userId: string
+): Promise<{ ended: boolean }> {
   const supabase = await createSupabaseServerClient()
-  await supabase
+
+  // 只允许结束当前用户尚未结束的对话。条件更新让重复点击、请求重试和
+  // 并发请求保持幂等，避免 total_conversations 被重复累计。
+  const { data: endedConversation, error: endError } = await supabase
     .from('conversations')
     .update({ ended_at: new Date().toISOString() })
     .eq('id', conversationId)
+    .eq('user_id', userId)
+    .is('ended_at', null)
+    .select('user_id')
+    .maybeSingle()
+
+  if (endError) throw endError
+  if (!endedConversation) return { ended: false }
 
   // 更新用户 profile 的 total_conversations
-  const { data: conv } = await supabase
-    .from('conversations')
-    .select('user_id, total_turns')
-    .eq('id', conversationId)
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('total_conversations, current_streak, longest_streak, last_practice_date')
+    .eq('id', userId)
     .single()
 
-  if (conv) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('total_conversations, current_streak, longest_streak, last_practice_date')
-      .eq('id', conv.user_id)
-      .single()
+  if (profileError) throw profileError
 
-    if (profile) {
-      const today = new Date().toISOString().split('T')[0]
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
-      const lastPractice = profile.last_practice_date
+  const today = new Date().toISOString().split('T')[0]
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+  const lastPractice = profile.last_practice_date
 
-      let streak = profile.current_streak || 0
-      if (lastPractice === today) {
-        // 今天已练过，不增加
-      } else if (lastPractice === yesterday) {
-        streak += 1
-      } else {
-        streak = 1
-      }
-
-      await supabase
-        .from('profiles')
-        .update({
-          total_conversations: (profile.total_conversations || 0) + 1,
-          current_streak: streak,
-          longest_streak: Math.max(streak, profile.longest_streak || 0),
-          last_practice_date: today
-        })
-        .eq('id', conv.user_id)
-    }
+  let streak = profile.current_streak || 0
+  if (lastPractice === today) {
+    // 今天已练过，不增加
+  } else if (lastPractice === yesterday) {
+    streak += 1
+  } else {
+    streak = 1
   }
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({
+      total_conversations: (profile.total_conversations || 0) + 1,
+      current_streak: streak,
+      longest_streak: Math.max(streak, profile.longest_streak || 0),
+      last_practice_date: today
+    })
+    .eq('id', userId)
+
+  if (updateError) throw updateError
+  return { ended: true }
 }

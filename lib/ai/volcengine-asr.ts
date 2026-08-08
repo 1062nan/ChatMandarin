@@ -16,6 +16,7 @@
 import WebSocket from 'ws'
 import { gzipSync, gunzipSync } from 'zlib'
 import { randomUUID } from 'crypto'
+import { callVoiceGateway, usesVoiceGateway } from './voice-gateway-client'
 
 const VOLC_ACCESS_KEY = process.env.VOLCENGINE_API_KEY || ''
 const VOLC_APP_KEY = process.env.VOLCENGINE_APP_ID || ''
@@ -203,6 +204,21 @@ function wavToPcm(wavBuffer: Buffer): Buffer {
 // ==================== 核心识别 ====================
 
 export async function recognizeSpeech(
+  audioData: ArrayBuffer,
+  format?: string,
+  sampleRate?: number
+): Promise<ASRResult> {
+  if (usesVoiceGateway()) {
+    return callVoiceGateway<ASRResult>(
+      '/v1/asr',
+      new Uint8Array(audioData),
+      `audio/${format || 'wav'};rate=${sampleRate || 16000}`
+    )
+  }
+  return recognizeSpeechDirect(audioData, format, sampleRate)
+}
+
+async function recognizeSpeechDirect(
   audioData: ArrayBuffer,
   _format?: string,
   _sampleRate?: number

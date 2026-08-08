@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, Check, Crown, Zap } from 'lucide-react'
 import { toast } from 'sonner'
@@ -10,6 +10,9 @@ import { cn } from '@/lib/utils/cn'
 
 interface UpgradeSectionProps {
   currentPlan: string
+  paymentsAvailable: boolean
+  cancelAtPeriodEnd?: boolean
+  currentPeriodEnd?: string | null
 }
 
 const plans = [
@@ -39,7 +42,7 @@ const plans = [
       'Real-time 4-dimension feedback',
       'HSKK mock tests (3/month)',
       'Mistake journal with SRS',
-      'Priority support'
+      'Unlimited shadowing and dubbing practice'
     ],
     cta: 'Upgrade to Plus',
     highlight: true,
@@ -53,9 +56,6 @@ const plans = [
     features: [
       'Everything in Plus',
       'Unlimited HSKK mock tests',
-      'Detailed scoring report (PDF)',
-      'Priority AI (faster response)',
-      'Early access to features',
       'Custom voice selection'
     ],
     cta: 'Upgrade to Pro',
@@ -64,17 +64,27 @@ const plans = [
   }
 ]
 
-export function UpgradeSection({ currentPlan }: UpgradeSectionProps) {
+export function UpgradeSection({
+  currentPlan,
+  paymentsAvailable,
+  cancelAtPeriodEnd = false,
+  currentPeriodEnd = null,
+}: UpgradeSectionProps) {
   const searchParams = useSearchParams()
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
   const [canceling, setCanceling] = useState(false)
 
-  // 支付成功后显示提示
-  if (searchParams.get('upgraded') === 'true') {
-    toast.success('Subscription activated! Enjoy ChatMandarin Premium.')
-  }
+  const upgraded = searchParams.get('upgraded') === 'true'
+  useEffect(() => {
+    if (upgraded) toast.success('Payment received. Your subscription will activate shortly.')
+  }, [upgraded])
 
   async function handleUpgrade(plan: string) {
+    if (!paymentsAvailable) {
+      toast.info('Subscriptions are temporarily unavailable while payment setup is being completed.')
+      return
+    }
+
     setLoadingPlan(plan)
     try {
       const res = await fetch('/api/checkout', {
@@ -89,7 +99,7 @@ export function UpgradeSection({ currentPlan }: UpgradeSectionProps) {
       }
 
       const { url } = await res.json()
-      // 跳转到 Lemon Squeezy 支付页
+      // Redirect to the Creem-hosted checkout.
       window.location.href = url
     } catch (error) {
       toast.error((error as Error).message || 'Failed to start checkout')
@@ -113,7 +123,7 @@ export function UpgradeSection({ currentPlan }: UpgradeSectionProps) {
   }
 
   return (
-    <Card>
+    <Card id="subscription" className="scroll-mt-6">
       <CardHeader>
         <CardTitle>Subscription</CardTitle>
       </CardHeader>
@@ -121,6 +131,12 @@ export function UpgradeSection({ currentPlan }: UpgradeSectionProps) {
         <p className="mb-4 text-sm text-muted-foreground">
           Current plan: <span className="font-semibold capitalize">{currentPlan}</span>
         </p>
+
+        {!paymentsAvailable && (
+          <p className="mb-4 rounded-md border border-gold/30 bg-gold/10 px-3 py-2 text-sm text-foreground" role="status">
+            Paid subscriptions are temporarily unavailable while payment provider verification is being completed.
+          </p>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-3">
           {plans.map((plan) => {
@@ -174,7 +190,7 @@ export function UpgradeSection({ currentPlan }: UpgradeSectionProps) {
                     onClick={() => handleUpgrade(plan.id)}
                   >
                     {loadingPlan === plan.id && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {plan.cta}
+                    {paymentsAvailable ? plan.cta : 'Temporarily unavailable'}
                   </Button>
                 )}
               </div>
@@ -182,7 +198,16 @@ export function UpgradeSection({ currentPlan }: UpgradeSectionProps) {
           })}
         </div>
 
-        {currentPlan !== 'free' && (
+        {currentPlan !== 'free' && cancelAtPeriodEnd && (
+          <div className="mt-4 border-t pt-4 text-sm text-muted-foreground">
+            Cancellation scheduled
+            {currentPeriodEnd
+              ? ` for ${new Date(currentPeriodEnd).toLocaleDateString()}`
+              : ' for the end of the current billing period'}.
+          </div>
+        )}
+
+        {currentPlan !== 'free' && !cancelAtPeriodEnd && (
           <div className="mt-4 border-t pt-4">
             <Button
               variant="ghost"

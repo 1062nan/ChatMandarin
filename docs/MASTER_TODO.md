@@ -66,23 +66,22 @@
 - [ ] Waitlist API 改为 `https://app.chatmandarin.cc/api/waitlist`
 - [ ] 重新部署 Landing Page（Cloudflare Pages）
 
-### 7. Lemon Squeezy（支付）
-- [ ] 注册 https://app.lemonsqueezy.com（护照）
-- [ ] 创建 Store → 记录 Store ID
+### 7. Creem（支付）
+- [ ] 使用真实中国大陆身份注册 https://creem.io 并完成 KYC
 - [ ] 创建产品：
-  - ChatMandarin Plus：$14.99/月 → 记录 Variant ID
-  - ChatMandarin Pro：$29/月 → 记录 Variant ID
+  - ChatMandarin Plus：$14.99/月 → 记录 Product ID
+  - ChatMandarin Pro：$29/月 → 记录 Product ID
 - [ ] 创建 Webhook：
-  - URL: `https://app.chatmandarin.cc/api/lemonsqueezy/webhook`
-  - Events: 全选
-  - 记录 Signing Secret
-- [ ] 填入 `.env.local` + Cloudflare 环境变量：
+  - URL: `https://app.chatmandarin.cc/api/creem/webhook`
+  - Events: subscription + refund + dispute
+  - 记录 Webhook Secret
+- [ ] 填入 `.env.local` + Vercel 环境变量：
   ```
-  LEMONSQUEEZY_API_KEY=...
-  LEMONSQUEEZY_WEBHOOK_SECRET=...
-  LEMONSQUEEZY_STORE_ID=...
-  LEMONSQUEEZY_PLUS_VARIANT_ID=...
-  LEMONSQUEEZY_PRO_VARIANT_ID=...
+  CREEM_API_KEY=...
+  CREEM_WEBHOOK_SECRET=...
+  CREEM_PLUS_PRODUCT_ID=...
+  CREEM_PRO_PRODUCT_ID=...
+  CREEM_TEST_MODE=true
   ```
 
 ### 8. Cloudflare KV
@@ -153,12 +152,12 @@ DEEPSEEK_API_KEY=（从 DeepSeek 复制）
 VOLCENGINE_APP_ID=（从火山引擎复制）
 VOLCENGINE_ACCESS_TOKEN=（同上）
 
-# Lemon Squeezy（上线前必填）
-LEMONSQUEEZY_API_KEY=
-LEMONSQUEEZY_WEBHOOK_SECRET=
-LEMONSQUEEZY_STORE_ID=
-LEMONSQUEEZY_PLUS_VARIANT_ID=
-LEMONSQUEEZY_PRO_VARIANT_ID=
+# Creem（上线前必填）
+CREEM_API_KEY=
+CREEM_WEBHOOK_SECRET=
+CREEM_PLUS_PRODUCT_ID=
+CREEM_PRO_PRODUCT_ID=
+CREEM_TEST_MODE=true
 
 # App 配置
 NEXT_PUBLIC_APP_URL=https://app.chatmandarin.cc
@@ -179,5 +178,5 @@ SENTRY_DSN=
 2. **配 DeepSeek + 火山引擎 Key**（10 分钟）→ 对话功能可测试
 3. **`npm run dev` 测试对话**（5 分钟）→ 确认核心功能
 4. **推送 GitHub + 部署 Cloudflare**（30 分钟）→ 线上可访问
-5. **配 Lemon Squeezy**（15 分钟）→ 支付可测试
+5. **配 Creem**（15 分钟）→ 支付可测试
 6. **更新 Landing Page 链接**（10 分钟）→ 完整闭环

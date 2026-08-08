@@ -81,7 +81,7 @@ export function AppNavbar({ plan = 'free' }: { plan?: 'free' | 'plus' | 'pro' })
           </Link>
           {plan === 'free' && (
             <Link
-              href="/settings"
+              href="/settings#subscription"
               className="mb-2 block rounded-md bg-vermilion/10 px-3 py-2 text-center text-xs font-medium text-vermilion hover:bg-vermilion/20"
             >
               ⚡ Upgrade to Plus

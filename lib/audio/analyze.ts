@@ -26,7 +26,6 @@ export function analyzeAudio(wav: ArrayBuffer): AudioAnalysis {
   let sampleRate = 16000
   let channels = 1
   let dataStart = 44
-  let bitsPerSample = 16
 
   // RIFF 校验
   if (bytes >= 44) {
@@ -45,7 +44,6 @@ export function analyzeAudio(wav: ArrayBuffer): AudioAnalysis {
         if (chunkId === 'fmt ') {
           channels = view.getUint16(pos + 10, true)
           sampleRate = view.getUint32(pos + 12, true)
-          bitsPerSample = view.getUint16(pos + 22, true)
         } else if (chunkId === 'data') {
           dataStart = pos + 8
           break
@@ -59,7 +57,6 @@ export function analyzeAudio(wav: ArrayBuffer): AudioAnalysis {
   let sumSq = 0
   let peak = 0
   let sampleCount = 0
-  let audioFormat = 1 // PCM
   for (let i = dataStart; i + 1 < bytes; i += 2) {
     const s = view.getInt16(i, true)
     const abs = Math.abs(s)

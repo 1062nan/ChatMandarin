@@ -23,9 +23,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'conversation_id required' }, { status: 400 })
     }
 
-    await endConversation(conversation_id)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('auth_id', user.id)
+      .single()
 
-    return NextResponse.json({ success: true })
+    if (!profile) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    }
+
+    const result = await endConversation(conversation_id, profile.id)
+
+    return NextResponse.json({ success: true, ended: result.ended })
   } catch (error) {
     console.error('End conversation failed:', error)
     return NextResponse.json({ error: 'Failed' }, { status: 500 })

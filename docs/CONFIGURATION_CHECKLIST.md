@@ -227,29 +227,28 @@ DEEPSEEK_API_KEY=你的 key
 
 ---
 
-### 10. Lemon Squeezy（支付）
+### 10. Creem（支付）
 
 **操作**：
-1. 打开 https://app.lemonsqueezy.com
-2. 注册（用护照）
-3. **Settings** → **API** → 创建 API Key
-4. **Stores** → 记录 Store ID
-5. **Products** → 创建 2 个产品：
+1. 打开 https://creem.io
+2. 使用真实中国大陆个人或企业身份注册并完成 KYC
+3. **Developers** → 创建测试 API Key
+4. **Products** → 创建 2 个 recurring 产品：
    - ChatMandarin Plus：$14.99/月
    - ChatMandarin Pro：$29/月
-6. 每个 Product 创建 Variant → 记录 Variant ID
-7. **Webhooks** → 创建：
-   - URL: `https://chatmandarin.cc/api/lemonsqueezy/webhook`
-   - Events: 全选
-   - 记录 Signing Secret
+5. 分别记录两个 Product ID
+6. **Developers → Webhooks** → 创建：
+   - URL: `https://app.chatmandarin.cc/api/creem/webhook`
+   - Events: 选择所有 subscription 事件，以及 refund/dispute 事件
+   - 记录 Webhook Secret
 
 填入 `.env.local`：
 ```
-LEMONSQUEEZY_API_KEY=你的 key
-LEMONSQUEEZY_WEBHOOK_SECRET=你的 signing secret
-LEMONSQUEEZY_STORE_ID=你的 store id
-LEMONSQUEEZY_PLUS_VARIANT_ID=plus 的 variant id
-LEMONSQUEEZY_PRO_VARIANT_ID=pro 的 variant id
+CREEM_API_KEY=你的 test key
+CREEM_WEBHOOK_SECRET=你的 webhook secret
+CREEM_PLUS_PRODUCT_ID=plus 的 product id
+CREEM_PRO_PRODUCT_ID=pro 的 product id
+CREEM_TEST_MODE=true
 ```
 
 ---
@@ -310,11 +309,11 @@ VOLCENGINE_APP_ID=（从火山引擎复制）
 VOLCENGINE_ACCESS_TOKEN=（同上）
 VOLCENGINE_ACCESS_KEY=（同上）
 VOLCENGINE_SECRET_KEY=（同上）
-LEMONSQUEEZY_API_KEY=（从 Lemon Squeezy 复制）
-LEMONSQUEEZY_WEBHOOK_SECRET=（同上）
-LEMONSQUEEZY_STORE_ID=（同上）
-LEMONSQUEEZY_PLUS_VARIANT_ID=（同上）
-LEMONSQUEEZY_PRO_VARIANT_ID=（同上）
+CREEM_API_KEY=（从 Creem Developers 复制）
+CREEM_WEBHOOK_SECRET=（从 Creem Webhook 复制）
+CREEM_PLUS_PRODUCT_ID=（从 Plus 产品复制）
+CREEM_PRO_PRODUCT_ID=（从 Pro 产品复制）
+CREEM_TEST_MODE=true
 RESEND_API_KEY=（从 Resend 复制）
 RESEND_FROM_EMAIL=hello@chatmandarin.cc
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -337,7 +336,7 @@ ADMIN_TOKEN=随机字符串
 - ⬜ 火山引擎 4 个值
 
 **Week 5 开发前必须配的**：
-- ⬜ Lemon Squeezy
+- ⬜ Creem
 
 **生产上线前必须配的**：
 - ⬜ Cloudflare KV / R2

@@ -1,18 +1,18 @@
 /**
  * POST /api/checkout
  *
- * 创建 Lemon Squeezy Checkout URL
+ * 创建 Creem Checkout URL
  *
  * Request body:
  *   { plan: "plus" | "pro" }
  *
  * Response:
- *   { url: "https://chatmandarin.lemonsqueezy.com/checkout/..." }
+ *   { url: "https://checkout.creem.io/..." }
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { createCheckoutUrl, type PlanType } from '@/lib/payment/lemonsqueezy'
+import { createCheckoutUrl, isCreemPaymentsAvailable, type PlanType } from '@/lib/payment/creem'
 
 export const runtime = 'nodejs'
 
@@ -23,6 +23,13 @@ export async function POST(request: NextRequest) {
 
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!isCreemPaymentsAvailable()) {
+      return NextResponse.json(
+        { error: 'Subscriptions are temporarily unavailable.' },
+        { status: 503 }
+      )
     }
 
     // 获取 profile
@@ -48,14 +55,14 @@ export async function POST(request: NextRequest) {
       plan: plan as PlanType,
       userEmail: profile.email,
       userId: profile.id,
-      redirectUrl: `${appUrl}/settings?upgraded=true`
+      successUrl: `${appUrl}/settings?upgraded=true`
     })
 
     return NextResponse.json({ url })
   } catch (error) {
     console.error('Checkout creation failed:', error)
     return NextResponse.json(
-      { error: 'Failed to create checkout', details: (error as Error).message },
+      { error: 'Failed to create checkout' },
       { status: 500 }
     )
   }

@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS webhook_events (
   processed_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Webhook events are written by the service-role client only.
+ALTER TABLE webhook_events ENABLE ROW LEVEL SECURITY;
+
 -- ============ usage_stats 加字段 ============
 ALTER TABLE usage_stats ADD COLUMN IF NOT EXISTS shadowing_count INT DEFAULT 0;
 ALTER TABLE usage_stats ADD COLUMN IF NOT EXISTS dubbing_count INT DEFAULT 0;
@@ -29,6 +32,7 @@ CREATE TABLE IF NOT EXISTS usage_monthly (
 CREATE INDEX IF NOT EXISTS idx_usage_monthly ON usage_monthly(user_id, year_month);
 
 ALTER TABLE usage_monthly ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can read own monthly usage" ON usage_monthly;
 CREATE POLICY "Users can read own monthly usage" ON usage_monthly
   FOR SELECT USING (user_id IN (SELECT id FROM profiles WHERE auth_id = auth.uid()));
 

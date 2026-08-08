@@ -210,15 +210,15 @@
 - ✅ 升级卡片对比清晰
 - ✅ "POPULAR" 标签突出
 
-### 代码评审
-- ✅ Lemon Squeezy 签名验证正确（HMAC-SHA256 + timingSafeEqual）
-- ✅ Webhook 处理多种事件
-- ⚠️ createCheckoutUrl 中 `custom_data` 存 user_id（安全，但 Lemon Squeezy 可能篡改）
-- ⚠️ Webhook 只通过 Lemon Squeezy ID 查找订阅（首次创建时 upsert 可能 user_id 不匹配）
+### 代码评审（2026-07-19 更新）
+- ✅ 已迁移到 Creem，Webhook 使用 HMAC-SHA256 + timingSafeEqual 验签
+- ✅ 支持支付、续费、计划取消、取消、过期、逾期和暂停事件
+- ✅ Checkout metadata 同时记录 user_id 与 plan，Webhook 另有客户邮箱回退匹配
+- ✅ 每个用户强制一条订阅记录，避免免费/付费记录冲突
 
 ### 修复建议
-1. **P0**：加取消订阅功能（调 Lemon Squeezy API cancel subscription）
-2. **P1**：支付成功后验证（从 Lemon Squeezy API 查询订阅状态）
+1. **P0**：完成 Creem KYC、产品、API Key 和 Webhook 配置
+2. **P0**：执行 `009_creem_payment_provider.sql` 并完成测试支付
 
 ---
 
@@ -248,7 +248,7 @@
 - ✅ **清晰的关注点分离**：AI 层 / 数据层 / UI 层 / 支付层
 - ✅ **类型安全**：TypeScript strict + Database 类型定义
 - ✅ **RLS 保护**：数据库行级安全
-- ✅ **MoR 支付**：Lemon Squeezy 处理全球税务
+- ✅ **MoR 支付**：Creem 处理全球税务
 - ✅ **品牌一致性**：墨黑+朱砂红+米白色系贯穿全局
 
 ### 需要改进

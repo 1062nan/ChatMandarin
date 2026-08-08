@@ -33,6 +33,7 @@ yarn-error.log*
 
 # Cloudflare
 .wrangler
+.open-next
 .dev.vars
 
 # TypeScript
@@ -54,3 +55,7 @@ supabase/.temp
 # Logs
 logs
 *.log
+
+# Vercel local project metadata
+.vercel
+.env*

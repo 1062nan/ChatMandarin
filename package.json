@@ -6,12 +6,20 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
-    "deploy": "next build && npx wrangler pages deploy .next --project-name=chatmandarin",
-    "preview": "next build && npx wrangler pages dev"
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv --include-runtime false cloudflare-env.d.ts",
+    "voice:typegen": "wrangler types --config workers/voice-gateway/wrangler.jsonc --env-file .env.example --env-interface VoiceGatewayEnv --include-runtime false workers/voice-gateway/worker-configuration.d.ts",
+    "voice:type-check": "tsc --project workers/voice-gateway/tsconfig.json",
+    "voice:dry-run": "wrangler deploy --config workers/voice-gateway/wrangler.jsonc --dry-run",
+    "voice:test": "node scripts/test-voice-gateway.mjs --duration-seconds 120",
+    "voice:test:local": "node scripts/run-local-voice-test.mjs --duration-seconds 120",
+    "voice:configure:production": "node scripts/configure-production-voice.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -34,7 +42,7 @@
     "framer-motion": "^11.15.0",
     "jsonrepair": "^3.15.0",
     "lucide-react": "^0.468.0",
-    "next": "14.2.18",
+    "next": "15.5.20",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.54.2",
@@ -47,18 +55,25 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.1",
+    "@cloudflare/workers-types": "5.20260718.1",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "14.2.18",
+    "eslint-config-next": "15.5.20",
     "postcss": "^8.4.49",
     "supabase": "^2.0.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "wrangler": "^3.93.0"
+    "wrangler": "^4.112.0"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.19"
+    }
   },
   "engines": {
     "node": ">=18.0.0"

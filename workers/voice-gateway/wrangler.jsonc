@@ -1,0 +1,16 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "chatmandarin-voice",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-17",
+  "placement": {
+    "region": "aws:ap-northeast-1"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": true,
+      "head_sampling_rate": 1
+    }
+  }
+}

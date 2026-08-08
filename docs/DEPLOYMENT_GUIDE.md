@@ -1,165 +1,94 @@
-# ChatMandarin 部署方案
+# ChatMandarin 部署指南（2026-07-18）
 
-## 架构总览
+ChatMandarin 分成两个独立部署：
 
-```
-chatmandarin.cc（Cloudflare Pages 项目 #1）
-  └── 静态 Landing Page（已部署，HTML）
-       └── CTA 按钮 → app.chatmandarin.cc
+- `landing/`：纯静态 Landing Page，继续使用 Cloudflare Pages。
+- `app/`：包含 SSR、Middleware 和 API Routes 的 Next.js 全栈应用，使用 Cloudflare Workers + OpenNext。
 
-app.chatmandarin.cc（Cloudflare Pages 项目 #2）
-  └── Next.js App（待部署）
-       ├── /login, /signup（公开）
-       ├── /dashboard, /conversation/*, /hskk/* （需登录）
-       └── /api/* （API 路由）
-```
+不要把 `app/.next` 直接上传到 Pages；那不是可运行的全栈产物。
 
-**两个 Cloudflare Pages 项目，一个域名**：
-- 根域 `chatmandarin.cc` → Landing Page（吸引 + Waitlist）
-- 子域 `app.chatmandarin.cc` → Next.js App（产品功能）
+## 1. 本地发布门禁
 
----
-
-## Step 1：部署 Next.js App 到 Cloudflare Pages
-
-### 1.1 创建新 Pages 项目
+在 `D:/Wordspace/oversea/ChatMandarin/app` 执行：
 
 ```bash
-cd D:/Wordspace/oversea/ChatMandarin/app
-npm run build
+npm ci
+npm run cf-typegen
+npm run type-check
+npm run lint
+npm run build:cloudflare
+npx wrangler deploy --dry-run
+npm run preview
 ```
 
-### 1.2 通过 GitHub 部署（推荐）
+必须在浏览器检查：首页、登录、注册、密码重置、Dashboard、对话启动，以及至少一个失败分支。Windows 上 OpenNext 会提示建议使用 WSL；CI 和正式构建优先用 Linux。
 
-1. 创建 GitHub 仓库：`chatmandarin-app`（私有）
-2. 推送代码：
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial: ChatMandarin App"
-   git remote add origin git@github.com:你的用户名/chatmandarin-app.git
-   git push -u origin main
-   ```
+## 2. Supabase
 
-3. Cloudflare Dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
-4. 选择 `chatmandarin-app` 仓库
-5. 配置：
-   - Framework preset: **Next.js**
-   - Build command: `npm run build`
-   - Build output directory: `.next`
-   - Node version: 18
+按顺序应用 `supabase/migrations/001_init.sql` 到最新迁移，且先在 staging 项目验证。生产执行前备份数据库。
 
-6. **Environment Variables**（在 Cloudflare Pages → Settings → Environment variables）：
-   逐条添加 `.env.local` 中的所有变量（除 `NODE_ENV`）
+Auth 至少配置：
 
-7. 点 **Save and Deploy**
+- Site URL：正式应用域名。
+- Redirect URL：`https://<app-domain>/auth/callback`。
+- Email provider；OAuth provider 只启用已正确配置回调的渠道。
 
-### 1.3 绑定子域名
+## 3. Workers 环境变量与密钥
 
-1. Cloudflare Pages 项目 → **Custom domains** → **Set up**
-2. 输入：`app.chatmandarin.cc`
-3. Cloudflare DNS 自动添加 CNAME 记录
-4. 等 1-5 分钟激活
+构建变量和运行时密钥都要在 Cloudflare Workers 的 Builds / Settings 中配置。不得写入 `wrangler.jsonc`、源码或 Git。
 
----
+必需：
 
-## Step 2：更新 Landing Page 的链接
-
-Landing Page 中的所有 `/login`、`/signup`、`/dashboard` 链接需要改为 `app.chatmandarin.cc/...`。
-
-### 需要修改的文件
-`D:/Wordspace/oversea/ChatMandarin/landing/index.html`
-
-### 需要替换的 URL
-```
-/login        → https://app.chatmandarin.cc/login
-/signup       → https://app.chatmandarin.cc/signup
-/dashboard    → https://app.chatmandarin.cc/dashboard
+```text
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+DEEPSEEK_API_KEY
+VOLCENGINE_API_KEY
+VOLCENGINE_APP_ID
+NEXT_PUBLIC_APP_URL
 ```
 
-### Waitlist 表单 API
-```
-原：/api/waitlist（同域相对路径）
-改：https://app.chatmandarin.cc/api/waitlist（跨域到 App）
-```
+支付启用前再配置：
 
-### 操作
-重新部署 Landing Page（Cloudflare Pages → 项目 #1 → Deploy）
-
----
-
-## Step 3：配置 Supabase Auth Redirect URLs
-
-Supabase Dashboard → Authentication → URL Configuration：
-
-**Site URL**：
-```
-https://app.chatmandarin.cc
+```text
+CREEM_API_KEY
+CREEM_WEBHOOK_SECRET
+CREEM_PLUS_PRODUCT_ID
+CREEM_PRO_PRODUCT_ID
+CREEM_TEST_MODE
 ```
 
-**Redirect URLs**（全部加上）：
-```
-http://localhost:3000/auth/callback
-https://app.chatmandarin.cc/auth/callback
-https://chatmandarin.cc/auth/callback  （备用，如果未来合并）
-```
+使用交互式命令写入密钥，不要把值放进命令行参数：
 
----
-
-## Step 4：配置 OAuth Provider Callback URLs
-
-每个 OAuth Provider 的回调 URL 改为：
-
-```
-https://xobfnmwaxlswfofmembv.supabase.co/auth/v1/callback
+```bash
+npx wrangler secret put SECRET_NAME
 ```
 
-（这个不变——Supabase 内部回调，与 App URL 无关）
+## 4. Staging 验收
 
-但 Supabase 内部的 redirect 配置会指向 `app.chatmandarin.cc/auth/callback`。
+正式域名发布前，先部署到 staging Worker 或 preview URL，完成：
 
----
+- 注册、登录、退出、忘记密码、密码重置。
+- 真实麦克风录音；Chrome、Edge、Safari/移动端至少各一轮。
+- ASR 空音频、过短音频、权限拒绝、上游超时。
+- AI 回复、TTS 播放、对话结束与统计只累计一次。
+- HSKK 提交、错题复习、每日/月度配额。
+- Checkout、Webhook 签名、Webhook 重放、取消订阅（启用支付时）。
+- Workers Logs 无未处理异常，且日志不包含密钥、完整音频或不必要的个人信息。
 
-## Step 5：未来合并（可选，Phase 2）
+## 5. 正式发布
 
-当产品验证成功后，可以把 Landing Page 合并进 Next.js App：
+只有 staging 验收通过后执行：
 
-1. 将 Landing Page HTML 转为 React 组件
-2. 部署到 `chatmandarin.cc`（替换静态项目）
-3. 子域 `app.chatmandarin.cc` 301 重定向到 `chatmandarin.cc`
-4. 统一为一个项目
-
-**Phase 2 再做**，现在先用双项目方案。
-
----
-
-## 本地开发 URL
-
-| 环境 | URL | 用途 |
-|------|-----|------|
-| Landing Page | `https://chatmandarin.cc` | 已上线（Cloudflare Pages） |
-| App（本地） | `http://localhost:3000` | 开发 |
-| App（线上） | `https://app.chatmandarin.cc` | 部署后 |
-
-Landing Page 的 Waitlist API 在本地开发时：
-```
-http://localhost:3000/api/waitlist  ← App 本地
+```bash
+npm run deploy
 ```
 
----
+部署后立即做同一套关键路径冒烟测试，并记录当前 Worker version。出现阻断性问题时使用 Wrangler versions/rollback 回退到上一稳定版本。
 
-## 检查清单
+## 6. Landing Page
 
-部署前确认：
-- [ ] Next.js App 能 `npm run build` 无报错
-- [ ] 所有环境变量已配到 Cloudflare Pages
-- [ ] Supabase Auth redirect URLs 含 `app.chatmandarin.cc`
-- [ ] Landing Page 的链接已改为 `app.chatmandarin.cc`
-- [ ] Cloudflare DNS 的 `app` CNAME 指向 Pages 项目
-- [ ] HTTPS 证书自动签发（Cloudflare 自动处理）
+`landing/wrangler.toml` 只包含非敏感配置。`ADMIN_TOKEN` 必须放在 Pages 加密环境变量中，并在本次源码泄露修复后轮换。管理接口只接受 `Authorization: Bearer <token>`，不要再通过 URL query string 传密钥。
 
-部署后验证：
-- [ ] `https://app.chatmandarin.cc/login` 能打开
-- [ ] 注册/登录功能正常
-- [ ] 从 Landing Page 点击 CTA 跳转到 App
-- [ ] Waitlist 表单跨域提交成功（CORS 配置）
+发布 Landing Page 前确认 CTA 指向实际可访问的应用或 waitlist；Beta 未开放时不要写“已上线”。

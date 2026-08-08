@@ -1,6 +1,8 @@
 # ChatMandarin App
 
-AI Chinese tutor for HSK learners. PWA Web App built with Next.js 14 + Cloudflare + Supabase.
+AI Chinese tutor for HSK learners. The Next.js 15 application runs on Vercel,
+with Supabase for authentication/data and a Cloudflare Worker voice gateway for
+Volcengine ASR/TTS traffic.
 
 ## Quick Start
 
@@ -41,10 +43,9 @@ npx supabase db push
 
 In Supabase Dashboard → Authentication → Providers:
 - Enable **Email** (with passwords)
-- Enable **Google** (add your OAuth credentials)
-- Enable **GitHub** (add your OAuth credentials)
-- Set **Site URL**: `http://localhost:3000` (dev) or `https://chatmandarin.cc` (prod)
-- Add **Redirect URLs**: `http://localhost:3000/auth/callback`, `https://chatmandarin.cc/auth/callback`
+- Keep OAuth providers disabled unless their production credentials and callback URLs have been configured and tested
+- Set **Site URL**: `http://localhost:3000` (dev) or `https://app.chatmandarin.cc` (prod)
+- Add **Redirect URLs**: `http://localhost:3000/auth/callback`, `https://app.chatmandarin.cc/auth/callback`
 
 ### 5. Copy static assets
 
@@ -64,12 +65,20 @@ npm run dev
 
 Open http://localhost:3000
 
-### 7. Deploy to Cloudflare
+### 7. Deploy the application to Vercel
 
 ```bash
+npm run type-check
+npm run lint
 npm run build
-npx wrangler pages deploy .next --project-name=chatmandarin
+npx vercel --prod --yes
 ```
+
+The production application is served at `https://app.chatmandarin.cc`. The
+separate static landing page is served by Cloudflare Pages at
+`https://chatmandarin.cc`. The Cloudflare/OpenNext scripts remain available for
+preview and portability checks; they are not the current primary app deployment
+path.
 
 ## Project Structure
 
@@ -102,7 +111,8 @@ app/
 ├── public/                     # Static assets
 ├── supabase/                   # Database migrations
 ├── .env.example                # Environment template
-├── wrangler.toml               # Cloudflare config
+├── open-next.config.ts         # OpenNext adapter config
+├── wrangler.jsonc              # Cloudflare Workers config
 ├── package.json
 └── README.md
 ```
@@ -111,26 +121,39 @@ app/
 
 | Layer | Technology |
 |-------|-----------|
-| Framework | Next.js 14 (App Router) |
+| Framework | Next.js 15 (App Router) |
 | UI | Tailwind CSS + shadcn/ui |
-| Auth | Supabase Auth (Email + Google + GitHub) |
+| Auth | Supabase Auth (Email/password; OAuth only when explicitly configured) |
 | Database | Supabase Postgres |
-| Edge Compute | Cloudflare Workers |
-| Hosting | Cloudflare Pages |
+| Application Hosting | Vercel |
+| Landing Hosting | Cloudflare Pages |
+| Voice Gateway | Cloudflare Workers |
 | AI (LLM) | DeepSeek V3 |
 | AI (STT) | Volcengine ASR |
 | AI (TTS) | Volcengine TTS |
-| Payment | Lemon Squeezy |
-| Email | Resend |
+| Payment | Creem (Merchant of Record) |
+| Support Email | Cloudflare Email Routing |
 
 ## Development Status
 
 - [x] **Week 1**: Project scaffolding + Auth + UI skeleton
-- [ ] **Week 2**: AI conversation core (DeepSeek + Volcengine)
-- [ ] **Week 3**: Feedback system + Mistake journal
-- [ ] **Week 4**: HSKK mock test + Scenario library
-- [ ] **Week 5**: Payment + Subscription
-- [ ] **Week 6**: Beta testing + Optimization
+- [x] **Week 2 (implementation)**: AI conversation core, ASR/TTS integration, audio diagnostics
+- [x] **Week 3 (implementation)**: Four-dimension feedback + mistake journal + spaced repetition
+- [x] **Week 4 (implementation)**: HSKK mock flow + learning path + scenario content
+- [x] **Week 5 (implementation)**: Checkout, webhook, cancellation, plans, and quota tracking
+- [x] **Week 6**: Production credentials, migrations, voice gateway, Live payments, public compliance pages, and launch hardening
+
+Production status verified on 2026-08-08: the landing page, login, signup,
+Privacy Policy, and Terms pages return HTTP 200. Creem Live products, production
+checkout creation, and the signed webhook path were validated on 2026-07-31.
+TypeScript and production builds pass; ESLint has no errors (legacy warnings
+remain).
+
+## Operations Documentation
+
+- [Production deployment runbook](docs/PRODUCTION_DEPLOYMENT_RUNBOOK_ZH.md)
+- [Creem payment setup](docs/CREEM_PAYMENT_SETUP_ZH.md)
+- [Production promotion plan](docs/PRODUCTION_PROMOTION_PLAN_ZH.md)
 
 ## License
 

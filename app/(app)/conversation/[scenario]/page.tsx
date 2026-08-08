@@ -8,8 +8,9 @@ export const metadata = { title: 'Conversation Practice' }
 export default async function ConversationPage({
   params
 }: {
-  params: { scenario: string }
+  params: Promise<{ scenario: string }>
 }) {
+  const { scenario: scenarioId } = await params
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -19,7 +20,7 @@ export default async function ConversationPage({
     supabase
       .from('scenarios')
       .select('*')
-      .eq('id', params.scenario)
+      .eq('id', scenarioId)
       .eq('is_active', true)
       .single(),
     supabase

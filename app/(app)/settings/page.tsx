@@ -2,6 +2,8 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { SettingsClient } from '@/components/settings/settings-client'
 import { UpgradeSection } from '@/components/settings/upgrade-section'
 import { VoicePicker } from '@/components/settings/voice-picker'
+import { getEffectivePlan } from '@/lib/subscription/access'
+import { isCreemPaymentsAvailable } from '@/lib/payment/creem'
 
 export const metadata = { title: 'Settings' }
 
@@ -23,10 +25,11 @@ export default async function SettingsPage() {
 
   const { data: subscription } = await supabase
     .from('subscriptions')
-    .select('plan, status, current_period_end')
+    .select('plan, status, current_period_end, cancel_at_period_end')
     .eq('user_id', profile.id)
-    .eq('status', 'active')
-    .single()
+    .maybeSingle()
+
+  const effectivePlan = getEffectivePlan(subscription)
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -34,9 +37,14 @@ export default async function SettingsPage() {
       <VoicePicker
         currentVoice={profile.tts_voice_type || 'BV700_streaming'}
         profileId={profile.id}
-        plan={(subscription?.plan as 'free' | 'plus' | 'pro') || 'free'}
+        plan={effectivePlan}
       />
-      <UpgradeSection currentPlan={subscription?.plan || 'free'} />
+      <UpgradeSection
+        currentPlan={effectivePlan}
+        paymentsAvailable={isCreemPaymentsAvailable()}
+        cancelAtPeriodEnd={subscription?.cancel_at_period_end || false}
+        currentPeriodEnd={subscription?.current_period_end || null}
+      />
     </div>
   )
 }

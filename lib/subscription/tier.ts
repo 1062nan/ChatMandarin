@@ -11,6 +11,7 @@
  */
 
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { getEffectivePlan } from '@/lib/subscription/access'
 
 export type Plan = 'free' | 'plus' | 'pro'
 export type Feature = 'conversation' | 'hskk' | 'shadowing' | 'dubbing'
@@ -33,7 +34,7 @@ export interface PlanFeatures {
 export const PLAN_FEATURES: Record<Plan, PlanFeatures> = {
   free: {
     conversation: { dailyLimitSec: 300 },  // 5 min/day
-    hskk: { dailyLimit: 1, monthlyLimit: 1 },
+    hskk: { dailyLimit: 1, monthlyLimit: null },
     shadowing: { dailyLimit: 5 },
     dubbing: { allowed: false },
     mistakeCapacity: 20,
@@ -77,10 +78,9 @@ export async function getSubscriptionContext(
     .from('subscriptions')
     .select('plan, status, current_period_end, cancel_at_period_end')
     .eq('user_id', profileId)
-    .eq('status', 'active')
     .maybeSingle()  // 用 maybeSingle 避免多记录时报错
 
-  const plan = (sub?.plan as Plan) || 'free'
+  const plan = getEffectivePlan(sub)
   const features = PLAN_FEATURES[plan]
 
   return {

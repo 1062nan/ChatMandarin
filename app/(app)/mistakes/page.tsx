@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { BookOpen, CheckCircle2, AlertCircle, Play, RotateCcw } from 'lucide-react'
+import { BookOpen, CheckCircle2, AlertCircle, Play } from 'lucide-react'
 import type { Mistake } from '@/lib/db/types'
 import { ReviewSession } from '@/components/mistakes/review-session'
 
@@ -17,44 +17,47 @@ export default function MistakesPage() {
   const [loading, setLoading] = useState(true)
   const [reviewMode, setReviewMode] = useState(false)
 
-  async function loadMistakes() {
+  const loadMistakes = useCallback(async () => {
     setLoading(true)
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('auth_id', user.id)
-      .single()
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('auth_id', user.id)
+        .single()
 
-    if (!profile) return
+      if (!profile) return
 
-    const [pendingRes, masteredRes] = await Promise.all([
-      supabase
-        .from('mistakes')
-        .select('*')
-        .eq('user_id', profile.id)
-        .lte('next_review_at', new Date().toISOString())
-        .eq('mastered', false)
-        .order('next_review_at', { ascending: true }),
-      supabase
-        .from('mistakes')
-        .select('*')
-        .eq('user_id', profile.id)
-        .eq('mastered', true)
-        .order('last_reviewed_at', { ascending: false })
-        .limit(20)
-    ])
+      const [pendingRes, masteredRes] = await Promise.all([
+        supabase
+          .from('mistakes')
+          .select('*')
+          .eq('user_id', profile.id)
+          .lte('next_review_at', new Date().toISOString())
+          .eq('mastered', false)
+          .order('next_review_at', { ascending: true }),
+        supabase
+          .from('mistakes')
+          .select('*')
+          .eq('user_id', profile.id)
+          .eq('mastered', true)
+          .order('last_reviewed_at', { ascending: false })
+          .limit(20)
+      ])
 
-    setPendingMistakes((pendingRes.data || []) as Mistake[])
-    setMasteredMistakes((masteredRes.data || []) as Mistake[])
-    setLoading(false)
-  }
+      setPendingMistakes((pendingRes.data || []) as Mistake[])
+      setMasteredMistakes((masteredRes.data || []) as Mistake[])
+    } finally {
+      setLoading(false)
+    }
+  }, [supabase])
 
   useEffect(() => {
     loadMistakes()
-  }, [])
+  }, [loadMistakes])
 
   if (loading) {
     return (

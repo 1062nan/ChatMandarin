@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { AppNavbar } from '@/components/layout/app-navbar'
+import { getEffectivePlan } from '@/lib/subscription/access'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createSupabaseServerClient()
@@ -18,12 +19,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const { data: subscription } = await supabase
     .from('subscriptions')
-    .select('plan, status')
+    .select('plan, status, current_period_end')
     .eq('user_id', profile?.id)
-    .eq('status', 'active')
     .maybeSingle()
 
-  const plan = (subscription?.plan as 'free' | 'plus' | 'pro') || 'free'
+  const plan = getEffectivePlan(subscription)
 
   return (
     <div className="min-h-screen bg-background">

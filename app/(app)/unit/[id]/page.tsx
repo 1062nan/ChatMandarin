@@ -9,8 +9,9 @@ export const metadata = { title: 'Unit' }
 export default async function UnitPage({
   params,
 }: {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }) {
+  const { id: unitId } = await params
   const supabase = await createSupabaseServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -25,7 +26,7 @@ export default async function UnitPage({
   const { data: unit } = await supabase
     .from('learning_units')
     .select('*')
-    .eq('id', params.id)
+    .eq('id', unitId)
     .single()
   if (!unit) {
     notFound()
@@ -37,26 +38,26 @@ export default async function UnitPage({
     supabase
       .from('scenarios')
       .select('id, name, description, recommended_hsk, duration_minutes')
-      .eq('unit_id', params.id)
+      .eq('unit_id', unitId)
       .eq('is_active', true)
       .order('sort_order'),
     supabase
       .from('shadowing_sentences')
       .select('id, text_zh, text_pinyin, text_en, hsk_level, category, difficulty')
-      .eq('unit_id', params.id)
+      .eq('unit_id', unitId)
       .eq('is_active', true)
       .order('sort_order'),
     supabase
       .from('dubbing_clips')
       .select('id, title, category, description, duration_seconds, hsk_level, difficulty')
-      .eq('unit_id', params.id)
+      .eq('unit_id', unitId)
       .eq('is_active', true)
       .order('sort_order'),
     supabase
       .from('user_progress')
       .select('status, best_score')
       .eq('user_id', profile.id)
-      .eq('unit_id', params.id)
+      .eq('unit_id', unitId)
       .single(),
   ])
 

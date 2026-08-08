@@ -50,6 +50,7 @@ export function ConversationClient({
   const [messages, setMessages] = useState<Message[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [turnIndex, setTurnIndex] = useState(0)
+  const [isEnding, setIsEnding] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [audioRecorder] = useState(() => new AudioRecorder())
@@ -285,17 +286,28 @@ export function ConversationClient({
 
   // 结束对话并更新统计
   const handleEndConversation = useCallback(async () => {
-    if (conversationId) {
-      // 发送 fire-and-forget（不等待返回）
-      fetch('/api/conversation/end', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation_id: conversationId })
-      }).catch(() => {})
+    if (isEnding) return
+    setIsEnding(true)
+
+    try {
+      if (conversationId) {
+        const response = await fetch('/api/conversation/end', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation_id: conversationId }),
+          keepalive: true
+        })
+
+        if (!response.ok) throw new Error('Failed to save conversation progress')
+      }
+      audioRecorder.cancel()
+      router.push('/dashboard')
+    } catch (endError) {
+      console.error('[Conversation] end failed:', endError)
+      toast.error('Could not save your progress. Please try again.')
+      setIsEnding(false)
     }
-    audioRecorder.cancel()
-    router.push('/dashboard')
-  }, [conversationId, audioRecorder, router])
+  }, [conversationId, isEnding, audioRecorder, router])
 
   // 取消录音
   const handleCancelRecording = useCallback(() => {
@@ -369,9 +381,10 @@ export function ConversationClient({
           variant="ghost"
           size="sm"
           onClick={handleEndConversation}
+          disabled={isEnding}
         >
-          <X className="h-4 w-4" />
-          End
+          {isEnding ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+          {isEnding ? 'Saving...' : 'End'}
         </Button>
       </div>
 
@@ -396,8 +409,9 @@ export function ConversationClient({
                 variant="primary"
                 className="ml-auto"
                 onClick={handleEndConversation}
+                disabled={isEnding}
               >
-                Back to Dashboard
+                {isEnding ? 'Saving...' : 'Back to Dashboard'}
               </Button>
             </CardContent>
           </Card>
@@ -632,19 +646,4 @@ function FeedbackCard({
       </CardContent>
     </Card>
   )
-}
-
-// ============ 开场白 ============
-
-function getOpeningMessage(hskLevel: number, scenarioId: string): string {
-  const greetings: Record<string, string[]> = {
-    restaurant: ['你好！欢迎光临！请问几位？', '您好！欢迎！几位用餐？'],
-    taxi: ['您好！请问去哪儿？', '你好！去哪里？'],
-    introduction: ['你好！我叫小李。你呢？', '嗨！很高兴认识你！你叫什么名字？'],
-    doctor: ['你好！请坐。哪里不舒服？', '您好！有什么问题？'],
-    interview: ['你好！欢迎来面试。先做个自我介绍吧。', '您好！请先介绍一下自己。']
-  }
-
-  const list = greetings[scenarioId] || ['你好！我们开始吧！']
-  return list[Math.floor(Math.random() * list.length)]
 }
