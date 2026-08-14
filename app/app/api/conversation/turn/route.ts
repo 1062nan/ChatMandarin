@@ -32,7 +32,8 @@ import { saveConversationTurn, getConversationTurns } from '@/lib/db/conversatio
 import { createMistakesFromErrors } from '@/lib/db/mistakes'
 import { checkVocabularyLevel, enhanceErrorsWithVocab } from '@/lib/ai/vocab-filter'
 import { analyzeAudio } from '@/lib/audio/analyze'
-import { getSubscriptionContext, checkQuota } from '@/lib/subscription/tier'
+import { getSubscriptionContext, consumeConversationSeconds } from '@/lib/subscription/tier'
+import { validateAudioFile } from '@/lib/practice/request'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -51,16 +52,16 @@ export async function POST(request: NextRequest) {
 
     // 2. 解析请求
     const formData = await request.formData()
-    const audioFile = formData.get('audio') as File
-    const conversationId = formData.get('conversation_id') as string
-    const turnIndex = parseInt(formData.get('turn_index') as string, 10)
-    const scenarioId = formData.get('scenario_id') as string
-    const hskLevel = parseInt(formData.get('hsk_level') as string, 10) || 3
-    const correctionMode = (formData.get('correction_mode') as string) || 'friendly'
+    const audio = validateAudioFile(formData.get('audio'))
+    const conversationId = formData.get('conversation_id')
+    const turnIndex = Number(formData.get('turn_index'))
 
-    if (!audioFile || !conversationId) {
+    if (!audio.ok) {
+      return NextResponse.json({ error: audio.error }, { status: 400 })
+    }
+    if (typeof conversationId !== 'string' || !conversationId || !Number.isInteger(turnIndex) || turnIndex < 0) {
       return NextResponse.json(
-        { error: 'Missing required fields: audio, conversation_id' },
+        { error: 'Invalid conversation_id or turn_index' },
         { status: 400 }
       )
     }
@@ -79,16 +80,26 @@ export async function POST(request: NextRequest) {
     // 验证 conversation 归属当前用户
     const { data: conv } = await supabase
       .from('conversations')
-      .select('user_id')
+      .select('user_id, scenario, hsk_level, correction_mode, ended_at')
       .eq('id', conversationId)
-      .single()
+      .maybeSingle()
     if (!conv || conv.user_id !== profile.id) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
     }
+    if (conv.ended_at) {
+      return NextResponse.json({ error: 'Conversation has already ended' }, { status: 409 })
+    }
 
-    // 4. 订阅 + 对话配额检查（free: 5min/天；plus/pro: 无限）
+    // Scenario and learning controls are immutable properties of the server-side
+    // conversation. Ignore browser-supplied copies that can be tampered with.
+    const scenarioId = conv.scenario
+    const hskLevel = conv.hsk_level
+    const correctionMode = conv.correction_mode
+
     const subCtx = await getSubscriptionContext(profile.id)
-    const convQuota = await checkQuota(subCtx, profile.id, 'conversation')
+    const audioBuffer = await audio.file.arrayBuffer()
+    const audioDurationSeconds = Math.max(1, Math.ceil(Math.max(0, audioBuffer.byteLength - 44) / 32000))
+    const convQuota = await consumeConversationSeconds(profile.id, audioDurationSeconds)
     if (!convQuota.ok) {
       return NextResponse.json(
         {
@@ -115,13 +126,12 @@ export async function POST(request: NextRequest) {
     const scenarioData = scenario as Record<string, any>
 
     // 6. ASR：用户音频 → 文字
-    const audioBuffer = await audioFile.arrayBuffer()
-    const audioFormat = (audioFile.name.split('.').pop() || 'wav').toLowerCase()
+    const audioFormat = audio.format
 
     // 诊断：检查音频是否静音（16-bit PCM）
     const audioDiag = analyzeAudio(audioBuffer)
     console.log('[conversation/turn] audio received:', {
-      size: audioFile.size,
+      size: audio.file.size,
       format: audioFormat,
       ...audioDiag,
     })
@@ -219,7 +229,7 @@ export async function POST(request: NextRequest) {
         aiText: aiResponse.reply,
         errors: aiResponse.errors || [],
         scores: aiResponse.scores,
-        userAudioDurationMs: Math.round(audioBuffer.byteLength / 32), // 粗略估算
+        userAudioDurationMs: audioDurationSeconds * 1000,
         aiResponseLatencyMs: latencyMs
       })
 
@@ -234,34 +244,6 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      // 更新使用统计（先读后写避免双重计数）
-      const today = new Date().toISOString().split('T')[0]
-      const { data: existingUsage } = await supabase
-        .from('usage_stats')
-        .select('conversation_seconds, conversation_count')
-        .eq('user_id', profile.id)
-        .eq('date', today)
-        .single()
-
-      if (existingUsage) {
-        await supabase
-          .from('usage_stats')
-          .update({
-            conversation_seconds: (existingUsage.conversation_seconds || 0) + Math.round(latencyMs / 1000),
-            conversation_count: (existingUsage.conversation_count || 0) + 1
-          })
-          .eq('user_id', profile.id)
-          .eq('date', today)
-      } else {
-        await supabase
-          .from('usage_stats')
-          .insert({
-            user_id: profile.id,
-            date: today,
-            conversation_seconds: Math.round(latencyMs / 1000),
-            conversation_count: 1
-          })
-      }
     } catch (dbError) {
       console.error('Database save failed:', dbError)
       // 数据库失败不阻断用户体验

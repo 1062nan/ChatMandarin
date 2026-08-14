@@ -9,6 +9,8 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { getHSKKScore } from '@/lib/ai/deepseek'
 import { getSubscriptionContext } from '@/lib/subscription/tier'
+import { clampScore } from '@/lib/practice/scoring'
+import { validateAudioFile } from '@/lib/practice/request'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -40,11 +42,14 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData()
-    const audioFile = formData.get('audio') as File
-    const clipId = formData.get('clip_id') as string
+    const audio = validateAudioFile(formData.get('audio'))
+    const clipId = formData.get('clip_id')
 
-    if (!audioFile || !clipId) {
-      return NextResponse.json({ error: 'Missing audio or clip_id' }, { status: 400 })
+    if (!audio.ok) {
+      return NextResponse.json({ error: audio.error }, { status: 400 })
+    }
+    if (typeof clipId !== 'string' || !clipId) {
+      return NextResponse.json({ error: 'Missing clip_id' }, { status: 400 })
     }
 
     // 获取片段数据
@@ -52,27 +57,28 @@ export async function POST(request: NextRequest) {
       .from('dubbing_clips')
       .select('*')
       .eq('id', clipId)
-      .single()
+      .eq('is_active', true)
+      .maybeSingle()
 
     if (!clip) return NextResponse.json({ error: 'Clip not found' }, { status: 404 })
 
-    const lines = clip.lines as any[]
+    const lines = Array.isArray(clip.lines) ? clip.lines as Array<Record<string, unknown>> : []
+    if (lines.length === 0 || lines.some((line) => typeof line.text !== 'string')) {
+      return NextResponse.json({ error: 'Clip content is invalid' }, { status: 422 })
+    }
 
     // ASR 全文
-    const audioBuffer = await audioFile.arrayBuffer()
-    const format = (audioFile.name.split('.').pop() || 'wav').toLowerCase()
-    const asrResult = await recognizeSpeech(audioBuffer, format, 16000)
+    const audioBuffer = await audio.file.arrayBuffer()
+    const asrResult = await recognizeSpeech(audioBuffer, audio.format, 16000)
 
     // 全文 vs 原文逐字对比
-    const allOriginal = lines.map(l => l.text).join('')
+    const allOriginal = lines.map((line) => line.text as string).join('')
     const allOriginalClean = allOriginal.replace(/[\s，。！？、,.!?]/g, '')
     const userClean = asrResult.text.replace(/[\s，。！？、,.!?]/g, '')
 
     let correct = 0
     const origChars = [...allOriginalClean]
     const userChars = [...userClean]
-    const maxLen = Math.max(origChars.length, userChars.length)
-
     for (let i = 0; i < origChars.length; i++) {
       if (origChars[i] === userChars[i]) correct++
     }
@@ -111,7 +117,7 @@ Score pronunciation (0-100), emotion match (0-100), and give feedback.
 Return JSON: { "scores": { "pronunciation": N, "word_choice": N }, "errors": [] }`
 
       const aiResult = await getHSKKScore(emotionPrompt)
-      emotionScore = aiResult.scores?.content || 75
+      emotionScore = clampScore(aiResult.scores?.content, 75)
     } catch {}
 
     const toneScore = Math.max(60, pronunciation - 10) // V1 简化
@@ -120,7 +126,7 @@ Return JSON: { "scores": { "pronunciation": N, "word_choice": N }, "errors": [] 
     )
 
     // 保存到数据库
-    const { data: performance } = await supabase
+    const { data: performance, error: saveError } = await supabase
       .from('dubbing_performances')
       .insert({
         user_id: profile.id,
@@ -136,6 +142,7 @@ Return JSON: { "scores": { "pronunciation": N, "word_choice": N }, "errors": [] 
       })
       .select()
       .single()
+    if (saveError) throw saveError
 
     return NextResponse.json({
       performance_id: performance?.id,

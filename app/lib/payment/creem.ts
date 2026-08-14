@@ -99,9 +99,16 @@ function asString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 
+function asTimestamp(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : null
+}
+
 export interface ParsedCreemEvent {
   eventId: string
   eventType: string
+  eventCreatedAt: number | null
   userId: string | null
   customerEmail: string | null
   plan: PlanType | null
@@ -115,6 +122,7 @@ export function parseCreemEvent(event: unknown): ParsedCreemEvent {
   const object = asRecord(root.object)
   const nestedSubscription = asRecord(object.subscription)
   const subscription = object.object === 'subscription' ? object : nestedSubscription
+  const transaction = asRecord(object.transaction)
   const metadata = {
     ...asRecord(object.metadata),
     ...asRecord(subscription.metadata),
@@ -134,12 +142,15 @@ export function parseCreemEvent(event: unknown): ParsedCreemEvent {
   return {
     eventId: asString(root.id) || '',
     eventType: asString(root.eventType) || '',
+    eventCreatedAt: asTimestamp(root.created_at),
     userId: asString(metadata.user_id)
       || asString(metadata.userId)
       || asString(metadata.referenceId),
     customerEmail: asString(customer.email),
     plan,
-    subscriptionId: asString(subscription.id),
+    subscriptionId: asString(subscription.id)
+      || asString(object.subscription)
+      || asString(transaction.subscription),
     status: asString(subscription.status),
     currentPeriodEnd: asString(subscription.current_period_end_date),
   }

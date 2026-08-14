@@ -23,10 +23,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { scenario_id, hsk_level, correction_mode } = body
+    const { scenario_id } = body
+    const hskLevel = Number(body.hsk_level ?? 3)
+    const correctionMode = body.correction_mode ?? 'friendly'
 
-    if (!scenario_id) {
-      return NextResponse.json({ error: 'scenario_id is required' }, { status: 400 })
+    if (
+      typeof scenario_id !== 'string'
+      || !scenario_id
+      || !Number.isInteger(hskLevel)
+      || hskLevel < 1
+      || hskLevel > 6
+      || !['friendly', 'strict', 'tutor'].includes(correctionMode)
+    ) {
+      return NextResponse.json({ error: 'Invalid conversation settings' }, { status: 400 })
     }
 
     const { data: profile } = await supabase
@@ -39,20 +48,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    // 创建对话记录
-    const conversation = await createConversation({
-      userId: profile.id,
-      scenario: scenario_id,
-      hskLevel: hsk_level || 3,
-      correctionMode: correction_mode || 'friendly'
-    })
-
-    // 获取场景数据
+    // Validate the active scenario before creating a conversation record.
     const { data: scenario } = await supabase
       .from('scenarios')
       .select('*')
       .eq('id', scenario_id)
-      .single()
+      .eq('is_active', true)
+      .maybeSingle()
+    if (!scenario) {
+      return NextResponse.json({ error: 'Scenario not found' }, { status: 404 })
+    }
+
+    const conversation = await createConversation({
+      userId: profile.id,
+      scenario: scenario_id,
+      hskLevel,
+      correctionMode
+    })
 
     let openingMessage = ''
     let openingAudio: string | null = null
@@ -60,12 +72,12 @@ export async function POST(request: NextRequest) {
     if (scenario) {
       // AI 生成开场白
       const systemPrompt = buildConversationPrompt({
-        hskLevel: hsk_level || 3,
+        hskLevel,
         scenarioId: scenario_id,
         scenarioName: (scenario.name as { en: string }).en,
         scenarioPrompt: scenario.scenario_prompt,
         aiPersona: scenario.ai_persona,
-        correctionMode: (correction_mode || 'friendly') as 'friendly' | 'strict' | 'tutor'
+        correctionMode: correctionMode as 'friendly' | 'strict' | 'tutor'
       })
 
       try {
@@ -77,7 +89,7 @@ export async function POST(request: NextRequest) {
         openingMessage = openingResponse.reply
 
         // 词汇检查（方案 C）
-        const vocabCheck = checkVocabularyLevel(openingMessage, hsk_level || 3)
+        const vocabCheck = checkVocabularyLevel(openingMessage, hskLevel)
         if (!vocabCheck.passed) {
           // 如果有超纲词，仍使用原文但记录（不阻断）
           console.log('Opening message has over-level words:', vocabCheck.overLevelWords)
@@ -93,7 +105,7 @@ export async function POST(request: NextRequest) {
       } catch (aiError) {
         console.error('Opening AI generation failed:', aiError)
         // 降级：使用简单开场白
-        openingMessage = getFallbackOpening(scenario_id, hsk_level || 3)
+        openingMessage = getFallbackOpening(scenario_id)
       }
     }
 
@@ -112,7 +124,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function getFallbackOpening(scenarioId: string, hskLevel: number): string {
+function getFallbackOpening(scenarioId: string): string {
   const fallbacks: Record<string, string[]> = {
     restaurant: ['你好！欢迎光临！请问几位？', '您好！欢迎！请坐！'],
     taxi: ['您好！请问去哪儿？', '你好！去哪里？'],

@@ -13,7 +13,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { timingSafeEqual } from 'crypto'
+import { createSupabaseAdmin } from '@/lib/supabase/server'
 import {
   generateScenario,
   generateShadowingSentences,
@@ -27,21 +28,28 @@ export const maxDuration = 60
 export async function POST(request: NextRequest) {
   // 管理员鉴权
   const token = request.headers.get('x-admin-token')
-  if (!token || token !== process.env.ADMIN_TOKEN) {
+  if (!isValidAdminToken(token, process.env.ADMIN_TOKEN)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const supabase = await createSupabaseServerClient()
+  const supabase = createSupabaseAdmin()
 
   try {
     const body = await request.json()
     const { type, hsk_level, count, options } = body
-    const hskLevel = hsk_level || 3
+    const hskLevel = Number(hsk_level ?? 3)
+    const requestedCount = Number(count ?? 5)
+    if (
+      !Number.isInteger(hskLevel) || hskLevel < 1 || hskLevel > 6
+      || !Number.isInteger(requestedCount) || requestedCount < 1 || requestedCount > 10
+    ) {
+      return NextResponse.json({ error: 'Invalid hsk_level or count' }, { status: 400 })
+    }
     const results: any[] = []
 
     switch (type) {
       case 'scenario': {
-        const n = count || 5
+        const n = requestedCount
         for (let i = 0; i < n; i++) {
           try {
             const scenario = await generateScenario(hskLevel, options?.theme)
@@ -69,7 +77,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'shadowing': {
-        const n = count || 10
+        const n = requestedCount
         const sentences = await generateShadowingSentences(hskLevel, options?.category || 'daily', n)
         const records = sentences.map((s: any, i: number) => ({
           id: `gen-${hskLevel}-${options?.category || 'daily'}-${Date.now()}-${i}`,
@@ -84,11 +92,12 @@ export async function POST(request: NextRequest) {
           sort_order: 200 + i
         }))
         const { data, error } = await supabase.from('shadowing_sentences').insert(records).select()
+        if (error) throw error
         return NextResponse.json({ generated: data?.length || 0, sentences: data })
       }
 
       case 'dubbing': {
-        const n = count || 3
+        const n = requestedCount
         for (let i = 0; i < n; i++) {
           try {
             const clip = await generateDubbingClip(hskLevel, options?.difficulty || 'medium')
@@ -122,7 +131,7 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           )
         }
-        const n = Math.min(count || 3, 10) // 安全上限
+        const n = requestedCount
 
         // 取出该单元（拿到 hsk_level）
         const { data: unit, error: unitErr } = await supabase
@@ -185,4 +194,12 @@ export async function POST(request: NextRequest) {
     console.error('Admin generation failed:', error)
     return NextResponse.json({ error: 'Generation failed' }, { status: 500 })
   }
+}
+
+function isValidAdminToken(provided: string | null, expected?: string): boolean {
+  if (!provided || !expected) return false
+  const providedBuffer = Buffer.from(provided)
+  const expectedBuffer = Buffer.from(expected)
+  return providedBuffer.length === expectedBuffer.length
+    && timingSafeEqual(providedBuffer, expectedBuffer)
 }

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { Mic, MicOff, Loader2, Volume2, Film, ChevronRight, RotateCcw, Check, Star, Home } from 'lucide-react'
+import { Mic, MicOff, Loader2, Volume2, Film, ChevronRight, RotateCcw, Star, Home } from 'lucide-react'
 import { AudioRecorder } from '@/lib/audio/wav-encoder'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -102,8 +102,6 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
       formData.append('audio', result.blob, 'line.wav')
       formData.append('clip_id', selectedClip!.id)
       formData.append('line_index', String(lineIndex))
-      formData.append('line_text', currentLine!.text)
-      formData.append('expected_emotion', currentLine!.emotion)
 
       const res = await fetch('/api/dubbing/practice', { method: 'POST', body: formData })
       if (!res.ok) throw new Error('Scoring failed')
@@ -115,7 +113,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
     } finally {
       setProcessing(false)
     }
-  }, [audioRecorder, selectedClip, lineIndex, currentLine])
+  }, [audioRecorder, selectedClip, lineIndex])
 
   // 正式表演
   const stopAndPerform = useCallback(async () => {

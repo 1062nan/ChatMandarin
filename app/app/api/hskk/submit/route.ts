@@ -8,10 +8,7 @@
  *   - section_qa: WAV audio (问答部分)
  *   - section_picture: WAV audio (看图说话)
  *   - level: beginner | intermediate | advanced
- *   - test_variant: number
- *   - reference_text: string (朗读参考文本)
- *   - qa_questions: JSON string (问答题目数组)
- *   - picture_prompt: string (看图说明)
+ *   - test_variant: number (the server resolves all canonical test content)
  *
  * Response:
  *   {
@@ -31,6 +28,8 @@ import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { getHSKKScore } from '@/lib/ai/deepseek'
 import { buildHSKKPrompt } from '@/lib/ai/prompts'
 import { getSubscriptionContext, consumeQuota } from '@/lib/subscription/tier'
+import { HSKK_CONTENT, type HSKKLevel } from '@/lib/hskk/content'
+import { validateAudioFile } from '@/lib/practice/request'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -58,7 +57,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    // 3. 订阅 + 配额检查（free: 1/天 + 1/月；plus: 3/月；pro: 无限）
+    // Validate the canonical test and uploads before reserving quota. Invalid
+    // requests must not consume an attempt.
+    const formData = await request.formData()
+    const level = formData.get('level')
+    const testVariant = Number(formData.get('test_variant'))
+    if (
+      (level !== 'beginner' && level !== 'intermediate' && level !== 'advanced')
+      || !Number.isInteger(testVariant)
+    ) {
+      return NextResponse.json({ error: 'Invalid HSKK test' }, { status: 400 })
+    }
+
+    const test = HSKK_CONTENT.find(
+      (candidate) => candidate.level === level && candidate.variant === testVariant
+    )
+    if (!test) {
+      return NextResponse.json({ error: 'HSKK test not found' }, { status: 404 })
+    }
+
+    const readAudio = validateAudioFile(formData.get('section_read'))
+    const qaAudio = validateAudioFile(formData.get('section_qa'))
+    const pictureAudio = validateAudioFile(formData.get('section_picture'))
+    const invalidAudio = [readAudio, qaAudio, pictureAudio].find((item) => !item.ok)
+    if (invalidAudio && !invalidAudio.ok) {
+      return NextResponse.json({ error: invalidAudio.error }, { status: 400 })
+    }
+    if (!readAudio.ok || !qaAudio.ok || !pictureAudio.ok) {
+      return NextResponse.json({ error: 'All 3 audio sections are required' }, { status: 400 })
+    }
+
     const subCtx = await getSubscriptionContext(profile.id)
     const quotaCheck = await consumeQuota(subCtx, profile.id, 'hskk')
     if (!quotaCheck.ok) {
@@ -78,30 +106,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 4. 解析请求
-    const formData = await request.formData()
-    const level = formData.get('level') as string
-    const referenceText = formData.get('reference_text') as string
-    const qaQuestionsStr = formData.get('qa_questions') as string
-    const picturePrompt = formData.get('picture_prompt') as string
-
-    const sectionReadAudio = formData.get('section_read') as File
-    const sectionQaAudio = formData.get('section_qa') as File
-    const sectionPictureAudio = formData.get('section_picture') as File
-
-    if (!sectionReadAudio || !sectionQaAudio || !sectionPictureAudio) {
-      return NextResponse.json(
-        { error: 'All 3 audio sections are required' },
-        { status: 400 }
-      )
-    }
+    const sectionReadAudio = readAudio.file
+    const sectionQaAudio = qaAudio.file
+    const sectionPictureAudio = pictureAudio.file
+    const referenceText = test.readAloud.passage
+    const qaQuestions = test.qa.questions.map((question) => question.question)
+    const picturePrompt = test.pictureDescription.prompt
 
     // 5. 创建 hskk_test 记录
     const { data: hskkTest, error: dbError } = await supabase
       .from('hskk_tests')
       .insert({
         user_id: profile.id,
-        level,
+        level: level as HSKKLevel,
         status: 'processing'
       })
       .select()
@@ -121,7 +138,7 @@ export async function POST(request: NextRequest) {
       .from('hskk_tests')
       .update({
         section_read_text: readResult.text,
-        section_qa_text: JSON.parse(qaQuestionsStr || '[]').map((q: string, i: number) => ({
+        section_qa_text: qaQuestions.map((q, i) => ({
           question: q,
           answer: extractAnswer(qaResult.text, i)
         })),
@@ -131,11 +148,11 @@ export async function POST(request: NextRequest) {
 
     // 7. DeepSeek 评分（综合 3 部分）
     const scoringPrompt = buildHSKKPrompt({
-      level: level as 'beginner' | 'intermediate' | 'advanced',
+      level,
       section: 'read', // 综合评分
-      transcript: `Section 1 (Read Aloud):\nReference: "${referenceText}"\nStudent said: "${readResult.text}"\n\nSection 2 (Q&A):\nQuestions: ${qaQuestionsStr}\nStudent answered: "${qaResult.text}"\n\nSection 3 (Picture Description):\nPrompt: ${picturePrompt}\nStudent described: "${pictureResult.text}"`,
+      transcript: `Section 1 (Read Aloud):\nReference: "${referenceText}"\nStudent said: "${readResult.text}"\n\nSection 2 (Q&A):\nQuestions: ${JSON.stringify(qaQuestions)}\nStudent answered: "${qaResult.text}"\n\nSection 3 (Picture Description):\nPrompt: ${picturePrompt}\nStudent described: "${pictureResult.text}"`,
       referenceText,
-      questions: JSON.parse(qaQuestionsStr || '[]'),
+      questions: qaQuestions,
       pictureDescription: picturePrompt
     })
 
@@ -172,33 +189,6 @@ export async function POST(request: NextRequest) {
         completed_at: new Date().toISOString()
       })
       .eq('id', hskkTest.id)
-
-    // 更新使用统计
-    const today = new Date().toISOString().split('T')[0]
-    const { data: existingUsage } = await supabase
-      .from('usage_stats')
-      .select('*')
-      .eq('user_id', profile.id)
-      .eq('date', today)
-      .single()
-
-    if (existingUsage) {
-      await supabase
-        .from('usage_stats')
-        .update({
-          hskk_count: (existingUsage.hskk_count || 0) + 1
-        })
-        .eq('user_id', profile.id)
-        .eq('date', today)
-    } else {
-      await supabase
-        .from('usage_stats')
-        .insert({
-          user_id: profile.id,
-          date: today,
-          hskk_count: 1
-        })
-    }
 
     // 9. 返回结果
     return NextResponse.json({

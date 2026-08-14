@@ -8,6 +8,8 @@ Volcengine ASR/TTS traffic.
 
 ### 1. Install dependencies
 
+Use Node.js 20.19 or newer (`.nvmrc` recommends Node 22.16).
+
 ```bash
 cd D:/Wordspace/oversea/ChatMandarin/app
 npm install
@@ -68,6 +70,7 @@ Open http://localhost:3000
 ### 7. Deploy the application to Vercel
 
 ```bash
+npm run test
 npm run type-check
 npm run lint
 npm run build

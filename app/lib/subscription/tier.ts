@@ -197,69 +197,45 @@ export async function checkQuota(
  * 注意：conversation 用秒数，不是次数，单独处理（见 conversation/turn 路由）。
  */
 export async function consumeQuota(
-  ctx: SubscriptionContext,
+  _ctx: SubscriptionContext,
   profileId: string,
   feature: 'hskk' | 'shadowing' | 'dubbing'
 ): Promise<QuotaCheck> {
-  const check = await checkQuota(ctx, profileId, feature)
-  if (!check.ok) return check
-
   const supabase = await createSupabaseServerClient()
-  const today = new Date().toISOString().split('T')[0]
-  const yearMonth = today.substring(0, 7)
+  const { data, error } = await (supabase as any).rpc('consume_practice_quota', {
+    p_profile_id: profileId,
+    p_feature: feature,
+  })
+  if (error) throw error
 
-  // 递增 daily
-  const fieldMap = {
-    hskk: 'hskk_count',
-    shadowing: 'shadowing_count',
-    dubbing: 'dubbing_count',
-  } as const
-  const field = fieldMap[feature]
-
-  const { data: existing } = await supabase
-    .from('usage_stats')
-    .select(field)
-    .eq('user_id', profileId)
-    .eq('date', today)
-    .maybeSingle()
-
-  if (existing) {
-    await supabase
-      .from('usage_stats')
-      .update({ [field]: ((existing as any)[field] || 0) + 1 })
-      .eq('user_id', profileId)
-      .eq('date', today)
-  } else {
-    await supabase.from('usage_stats').insert({
-      user_id: profileId,
-      date: today,
-      [field]: 1,
-    })
+  const result = Array.isArray(data) ? data[0] : null
+  if (!result) throw new Error('Quota service returned no result')
+  return {
+    ok: Boolean(result.allowed),
+    reason: result.reason || undefined,
+    remaining: {
+      daily: result.daily_remaining,
+      monthly: result.monthly_remaining,
+    },
   }
+}
 
-  // HSKK 还要递增月度
-  if (feature === 'hskk') {
-    const { data: monthExisting } = await supabase
-      .from('usage_monthly')
-      .select('hskk_count')
-      .eq('user_id', profileId)
-      .eq('year_month', yearMonth)
-      .maybeSingle()
+export async function consumeConversationSeconds(
+  profileId: string,
+  seconds: number
+): Promise<QuotaCheck> {
+  const supabase = await createSupabaseServerClient()
+  const { data, error } = await (supabase as any).rpc('consume_conversation_seconds', {
+    p_profile_id: profileId,
+    p_seconds: seconds,
+  })
+  if (error) throw error
 
-    if (monthExisting) {
-      await supabase
-        .from('usage_monthly')
-        .update({ hskk_count: (monthExisting.hskk_count || 0) + 1 })
-        .eq('user_id', profileId)
-        .eq('year_month', yearMonth)
-    } else {
-      await supabase.from('usage_monthly').insert({
-        user_id: profileId,
-        year_month: yearMonth,
-        hskk_count: 1,
-      })
-    }
+  const result = Array.isArray(data) ? data[0] : null
+  if (!result) throw new Error('Conversation quota service returned no result')
+  return {
+    ok: Boolean(result.allowed),
+    reason: result.allowed ? undefined : 'daily_exceeded',
+    remaining: { daily: result.daily_remaining },
   }
-
-  return { ok: true }
 }

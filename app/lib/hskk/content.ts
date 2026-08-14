@@ -242,9 +242,12 @@ export const HSKK_CONTENT: HSKKTestContent[] = [
 /**
  * 随机获取一套测试内容
  */
-export function getRandomTest(level: HSKKLevel): HSKKTestContent {
+export function getRandomTest(
+  level: HSKKLevel,
+  random: () => number = Math.random
+): HSKKTestContent {
   const tests = HSKK_CONTENT.filter(t => t.level === level)
-  return tests[Math.floor(Math.random() * tests.length)]
+  return tests[Math.min(tests.length - 1, Math.floor(random() * tests.length))]
 }
 
 /**

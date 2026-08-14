@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
+    "test": "vitest run",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "build:cloudflare": "opennextjs-cloudflare build",
@@ -42,7 +43,7 @@
     "framer-motion": "^11.15.0",
     "jsonrepair": "^3.15.0",
     "lucide-react": "^0.468.0",
-    "next": "15.5.20",
+    "next": "15.5.23",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.54.2",
@@ -55,27 +56,28 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260813.1",
     "@opennextjs/cloudflare": "^1.20.1",
-    "@cloudflare/workers-types": "5.20260718.1",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",
     "@types/react-dom": "^18.3.5",
     "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",
-    "eslint-config-next": "15.5.20",
-    "postcss": "^8.4.49",
+    "eslint-config-next": "15.5.23",
+    "postcss": "^8.5.26",
     "supabase": "^2.0.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "wrangler": "^4.112.0"
+    "vitest": "^3.2.6",
+    "wrangler": "^4.123.0"
   },
   "overrides": {
     "next": {
-      "postcss": "8.5.19"
+      "postcss": "8.5.26"
     }
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19.0"
   }
 }

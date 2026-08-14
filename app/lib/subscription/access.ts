@@ -7,16 +7,16 @@ interface SubscriptionAccessRecord {
 }
 
 export function getEffectivePlan(subscription: SubscriptionAccessRecord | null): Plan {
-  if (!subscription || subscription.plan === 'free') return 'free'
+  if (!subscription || (subscription.plan !== 'plus' && subscription.plan !== 'pro')) return 'free'
   if (subscription.status === 'active' || subscription.status === 'trialing') {
-    return subscription.plan === 'pro' ? 'pro' : 'plus'
+    return subscription.plan
   }
   if (
     subscription.status === 'canceled'
     && subscription.current_period_end
     && new Date(subscription.current_period_end).getTime() > Date.now()
   ) {
-    return subscription.plan === 'pro' ? 'pro' : 'plus'
+    return subscription.plan
   }
   return 'free'
 }

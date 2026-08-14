@@ -7,7 +7,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { synthesizeSpeech, type VoiceType } from '@/lib/ai/volcengine-tts'
+import { synthesizeSpeech, VOICE_TYPES, type VoiceType } from '@/lib/ai/volcengine-tts'
 
 export const runtime = 'nodejs'
 
@@ -24,6 +24,9 @@ export async function POST(request: NextRequest) {
 
     if (!text || typeof text !== 'string') {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 })
+    }
+    if (voice_type !== undefined && !(voice_type in VOICE_TYPES)) {
+      return NextResponse.json({ error: 'Invalid voice type' }, { status: 400 })
     }
 
     const result = await synthesizeSpeech(

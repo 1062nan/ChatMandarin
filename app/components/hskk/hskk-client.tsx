@@ -8,7 +8,7 @@ import { AudioRecorder } from '@/lib/audio/wav-encoder'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils/cn'
-import type { HSKKLevel, HSKKTestContent } from '@/lib/hskk/content'
+import { getRandomTest, type HSKKLevel, type HSKKTestContent } from '@/lib/hskk/content'
 
 type Phase = 'select' | 'read-prep' | 'read-record' | 'qa-intro' | 'qa-record' | 'picture-prep' | 'picture-record' | 'submitting' | 'result'
 
@@ -100,7 +100,7 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
 
   // 选择级别
   const handleSelectLevel = (level: HSKKLevel) => {
-    const test = tests.find(t => t.level === level)
+    const test = tests.some(t => t.level === level) ? getRandomTest(level) : undefined
     if (!test) return
     setSelectedTest(test)
     setRecordings({ qa: [] })
@@ -140,12 +140,13 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
     const blob = await stopRecording()
     if (!blob) return
     setRecordings(prev => ({ ...prev, picture: blob }))
-    handleSubmit()
+    await handleSubmit(blob)
   }
 
   // 提交评分
-  const handleSubmit = async () => {
-    if (!selectedTest || !recordings.read || !recordings.picture || recordings.qa.length === 0) {
+  const handleSubmit = async (pictureRecording?: Blob) => {
+    const picture = pictureRecording || recordings.picture
+    if (!selectedTest || !recordings.read || !picture || recordings.qa.length === 0) {
       toast.error('Missing recordings')
       return
     }
@@ -161,11 +162,9 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
       const formData = new FormData()
       formData.append('section_read', recordings.read, 'read.wav')
       formData.append('section_qa', qaBlob, 'qa.wav')
-      formData.append('section_picture', recordings.picture, 'picture.wav')
+      formData.append('section_picture', picture, 'picture.wav')
       formData.append('level', selectedTest.level)
-      formData.append('reference_text', selectedTest.readAloud.passage)
-      formData.append('qa_questions', JSON.stringify(selectedTest.qa.questions.map(q => q.question)))
-      formData.append('picture_prompt', selectedTest.pictureDescription.prompt)
+      formData.append('test_variant', String(selectedTest.variant))
 
       const res = await fetch('/api/hskk/submit', {
         method: 'POST',
@@ -370,7 +369,7 @@ function LevelSelect({ tests, onSelect }: { tests: HSKKTestContent[]; onSelect: 
       <div className="text-center">
         <h1 className="text-3xl font-bold tracking-tight">HSKK Mock Test</h1>
         <p className="mt-2 text-muted-foreground">
-          Full simulation of the official HSKK oral exam. Get scored on 5 dimensions.
+          Transcript-based HSKK practice with feedback across 5 learning dimensions.
         </p>
       </div>
 
@@ -623,7 +622,7 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, i
 
 function ResultView({ result, onReset }: { result: HSKKResult; onReset: () => void }) {
   const dimensions = [
-    { label: 'Pronunciation', value: result.scores.pronunciation, cn: '发音' },
+    { label: 'Speech clarity', value: result.scores.pronunciation, cn: '清晰度' },
     { label: 'Fluency', value: result.scores.fluency, cn: '流利度' },
     { label: 'Grammar', value: result.scores.grammar, cn: '语法' },
     { label: 'Vocabulary', value: result.scores.vocabulary, cn: '词汇' },
@@ -649,7 +648,7 @@ function ResultView({ result, onReset }: { result: HSKKResult; onReset: () => vo
             <span className="text-2xl text-muted-foreground">/100</span>
           </div>
           <p className="mt-2 text-lg font-semibold">
-            {result.predicted_pass ? 'Predicted: PASS ✓' : 'Predicted: Not yet passing'}
+            {result.predicted_pass ? 'Practice estimate: passing range' : 'Practice estimate: keep improving'}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">{result.overall_feedback}</p>
         </CardContent>
@@ -787,4 +786,3 @@ async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
 
   return new Blob([result], { type: 'audio/wav' })
 }
-

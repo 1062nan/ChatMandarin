@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
-import { Mic, MicOff, Loader2, Volume2, ChevronRight, RotateCcw, Check, X } from 'lucide-react'
+import { Mic, MicOff, Loader2, Volume2, ChevronRight, RotateCcw } from 'lucide-react'
 import { AudioRecorder } from '@/lib/audio/wav-encoder'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -22,7 +22,7 @@ interface ScoreResult {
   transcript: string
   original: string
   pronunciation_score: number
-  tone_score: number
+  tone_score: number | null
   fluency_score: number
   char_comparison: Array<{ char: string; userSaid: string; correct: boolean }>
   errors: any[]
@@ -89,7 +89,6 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
       const formData = new FormData()
       formData.append('audio', result.blob, 'recording.wav')
       formData.append('sentence_id', current.id)
-      formData.append('original_text', current.text_zh)
 
       const res = await fetch('/api/shadowing/score', { method: 'POST', body: formData })
       if (!res.ok) throw new Error('Scoring failed')
@@ -124,7 +123,7 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
   }
 
   const avgScore = score
-    ? Math.round((score.pronunciation_score + score.tone_score + score.fluency_score) / 3)
+    ? Math.round((score.pronunciation_score + score.fluency_score) / 2)
     : 0
 
   return (
@@ -185,11 +184,9 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
               </div>
             </div>
 
-            {/* 3 scores */}
-            <div className="mb-4 grid grid-cols-3 gap-3">
+            <div className="mb-4 grid grid-cols-2 gap-3">
               {[
                 { label: 'Pronunciation', value: score.pronunciation_score },
-                { label: 'Tone', value: score.tone_score },
                 { label: 'Fluency', value: score.fluency_score }
               ].map(s => (
                 <div key={s.label} className="text-center">
@@ -201,6 +198,9 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
                 </div>
               ))}
             </div>
+            <p className="mb-4 text-center text-xs text-muted-foreground">
+              Tone is not scored because the current recognizer does not provide acoustic tone assessment.
+            </p>
 
             {/* Char comparison */}
             <div className="flex flex-wrap justify-center gap-1 border-t pt-4">
