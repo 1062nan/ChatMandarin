@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChatMandarin Marketing Storyboard</title>
+  <style>
+    :root {
+      --paper: #f7f3e9;
+      --paper-strong: #fffdf8;
+      --ink: #172434;
+      --muted: #667085;
+      --line: #e5dfd3;
+      --red: #cf3b27;
+      --red-dark: #a92c1e;
+      --jade: #24745e;
+      --jade-soft: #e7f2ed;
+      --gold: #b78a3f;
+      --shadow: 0 24px 70px rgba(33, 45, 55, .14);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 8% 12%, rgba(207, 59, 39, .08), transparent 28%),
+        radial-gradient(circle at 90% 90%, rgba(36, 116, 94, .09), transparent 28%),
+        var(--paper);
+    }
+
+    .scene {
+      display: none;
+      width: 1600px;
+      height: 900px;
+      padding: 36px 48px;
+      position: relative;
+    }
+
+    .scene.active { display: block; }
+
+    .topbar {
+      height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      border: 1px solid rgba(229, 223, 211, .9);
+      border-radius: 18px;
+      background: rgba(255, 253, 248, .88);
+      box-shadow: 0 10px 28px rgba(33, 45, 55, .06);
+    }
+
+    .brand { display: flex; align-items: center; gap: 14px; font: 700 24px Georgia, serif; }
+    .brand img { width: 42px; height: 42px; }
+    .nav { display: flex; align-items: center; gap: 26px; color: #4d5968; font-size: 14px; }
+    .nav .active-nav { color: var(--red); font-weight: 700; }
+
+    .demo-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 11px;
+      border-radius: 999px;
+      border: 1px solid #e8cfc9;
+      background: #fff7f4;
+      color: var(--red-dark);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+
+    .content { height: calc(100% - 86px); padding-top: 24px; }
+    .card { background: var(--paper-strong); border: 1px solid var(--line); border-radius: 22px; box-shadow: var(--shadow); }
+
+    .section-title h1 { margin: 0; font-size: 38px; line-height: 1.12; letter-spacing: -.03em; }
+    .section-title p { margin: 9px 0 0; color: var(--muted); font-size: 16px; }
+
+    .path-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 26px; }
+    .path-card { min-height: 250px; padding: 25px; position: relative; overflow: hidden; }
+    .path-card::after {
+      content: attr(data-cn);
+      position: absolute;
+      right: 18px;
+      bottom: -14px;
+      color: rgba(207, 59, 39, .07);
+      font: 700 112px Georgia, serif;
+    }
+    .level { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 16px; background: #f6e9e5; color: var(--red-dark); font-size: 22px; font-weight: 800; }
+    .path-card h2 { margin: 18px 0 8px; font-size: 23px; }
+    .path-card p { margin: 0; color: var(--muted); line-height: 1.55; max-width: 330px; }
+    .progress { height: 8px; margin-top: 24px; background: #eee8dd; border-radius: 999px; overflow: hidden; }
+    .progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--red), #e9785f); }
+    .progress-label { margin-top: 8px; color: var(--muted); font-size: 12px; }
+
+    .conversation-layout { display: grid; grid-template-columns: 310px 1fr; gap: 22px; height: 100%; }
+    .session-panel { padding: 25px; }
+    .scenario-icon { width: 62px; height: 62px; display: grid; place-items: center; border-radius: 18px; background: #f8e6e1; font-size: 32px; }
+    .session-panel h1 { margin: 18px 0 4px; font-size: 27px; }
+    .cn-label { color: var(--red-dark); font-size: 15px; }
+    .meta { display: grid; gap: 12px; margin-top: 24px; }
+    .meta-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #eee8dd; color: var(--muted); font-size: 14px; }
+    .meta-row strong { color: var(--ink); }
+    .end-btn { width: 100%; margin-top: 24px; padding: 13px; border: 1px solid #e9bdb4; border-radius: 12px; background: #fff7f4; color: var(--red-dark); font-weight: 700; }
+
+    .chat-card { display: flex; flex-direction: column; overflow: hidden; }
+    .chat-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid var(--line); }
+    .live { color: var(--jade); font-size: 13px; font-weight: 700; }
+    .messages { flex: 1; display: flex; flex-direction: column; gap: 18px; padding: 24px 32px; }
+    .message { display: flex; gap: 12px; max-width: 76%; }
+    .message.user { align-self: flex-end; flex-direction: row-reverse; }
+    .avatar { flex: 0 0 auto; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: #f3e6df; color: var(--red-dark); font-weight: 800; }
+    .user .avatar { background: var(--jade-soft); color: var(--jade); }
+    .bubble { padding: 15px 18px; border-radius: 17px 17px 17px 5px; background: #f6f0e6; font-size: 18px; line-height: 1.5; }
+    .user .bubble { border-radius: 17px 17px 5px 17px; background: #eaf4ef; }
+    .pinyin { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .translation { margin-top: 3px; color: #7b8490; font-size: 13px; }
+
+    .record-area { padding: 18px 26px 22px; border-top: 1px solid var(--line); text-align: center; }
+    .mic { width: 66px; height: 66px; margin: 0 auto; display: grid; place-items: center; border-radius: 50%; background: var(--red); color: white; font-size: 27px; box-shadow: 0 12px 24px rgba(207, 59, 39, .25); }
+    .record-area p { margin: 9px 0 0; color: var(--muted); font-size: 13px; }
+
+    .feedback-layout { display: grid; grid-template-columns: 1.25fr .75fr; gap: 22px; height: 100%; }
+    .feedback-main { padding: 26px 30px; }
+    .feedback-main h1 { margin: 0; font-size: 31px; }
+    .quote { margin-top: 20px; padding: 18px 20px; border-radius: 16px; background: #f7f1e7; font-size: 21px; }
+    .correction { margin-top: 14px; padding: 15px 18px; border-left: 4px solid var(--jade); border-radius: 0 12px 12px 0; background: var(--jade-soft); }
+    .correction strong { display: block; color: var(--jade); margin-bottom: 7px; }
+    .scores { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 22px; }
+    .score { padding: 17px 12px; border: 1px solid var(--line); border-radius: 15px; text-align: center; }
+    .score b { display: block; color: var(--jade); font-size: 30px; }
+    .score span { color: var(--muted); font-size: 12px; }
+    .feedback-tip { margin-top: 20px; padding: 18px; border-radius: 15px; background: #fff8eb; border: 1px solid #ead7ae; }
+    .feedback-side { padding: 28px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    .overall-ring { width: 180px; height: 180px; display: grid; place-items: center; border-radius: 50%; background: conic-gradient(var(--jade) 0 86%, #e8e2d7 86%); position: relative; }
+    .overall-ring::after { content: ""; position: absolute; inset: 15px; background: var(--paper-strong); border-radius: 50%; }
+    .overall-value { position: relative; z-index: 1; }
+    .overall-value b { display: block; font-size: 52px; color: var(--jade); }
+    .overall-value span { color: var(--muted); font-size: 13px; }
+    .feedback-side h2 { margin: 22px 0 8px; }
+    .feedback-side p { margin: 0; color: var(--muted); line-height: 1.5; }
+
+    .hskk-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 30px; }
+    .hskk-card { min-height: 390px; padding: 26px; position: relative; }
+    .hskk-card.recommended { border: 2px solid var(--red); transform: translateY(-6px); }
+    .recommend { position: absolute; top: 18px; right: 18px; padding: 6px 10px; border-radius: 999px; background: #f8e6e1; color: var(--red-dark); font-size: 11px; font-weight: 800; }
+    .hskk-card .hanzi { font: 700 54px Georgia, serif; color: rgba(207, 59, 39, .24); }
+    .hskk-card h2 { margin: 14px 0 4px; font-size: 26px; }
+    .hskk-card .range { color: var(--red-dark); font-size: 13px; font-weight: 700; }
+    .hskk-card ul { margin: 24px 0 0; padding: 0; list-style: none; color: var(--muted); line-height: 2; }
+    .hskk-card li::before { content: "✓"; margin-right: 9px; color: var(--jade); font-weight: 800; }
+    .select-btn { position: absolute; left: 26px; right: 26px; bottom: 26px; padding: 14px; border: 0; border-radius: 12px; background: var(--red); color: white; font-weight: 800; }
+
+    .banner-scene { padding: 0; background: url("brand-background.png") center/cover no-repeat; }
+    .banner-wrap { width: 100%; height: 100%; padding: 70px 84px; display: grid; grid-template-columns: .85fr 1.15fr; gap: 56px; align-items: center; }
+    .banner-copy .mini-brand { display: flex; align-items: center; gap: 13px; font: 700 24px Georgia, serif; }
+    .banner-copy .mini-brand img { width: 46px; height: 46px; }
+    .banner-copy h1 { margin: 28px 0 18px; font: 700 63px/1.04 Georgia, serif; letter-spacing: -.035em; }
+    .banner-copy h1 em { color: var(--red); font-style: normal; }
+    .banner-copy p { max-width: 560px; margin: 0; color: #4f5b69; font-size: 22px; line-height: 1.5; }
+    .pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 27px; }
+    .pill { padding: 9px 13px; border: 1px solid rgba(207,59,39,.2); border-radius: 999px; background: rgba(255,253,248,.78); color: #473f3b; font-size: 13px; font-weight: 700; }
+    .cta { display: inline-flex; margin-top: 28px; padding: 14px 22px; border-radius: 13px; background: var(--red); color: white; font-weight: 800; box-shadow: 0 12px 28px rgba(207,59,39,.24); }
+    .banner-product { padding: 18px; transform: rotate(1.2deg); background: rgba(255,253,248,.82); backdrop-filter: blur(8px); }
+    .banner-product .chat-card { height: 650px; box-shadow: none; background: #fffdf8; }
+
+    .video-title {
+      position: absolute;
+      left: 70px;
+      bottom: 55px;
+      z-index: 5;
+      padding: 17px 22px;
+      border-radius: 15px;
+      color: white;
+      background: rgba(23, 36, 52, .92);
+      box-shadow: 0 16px 40px rgba(0,0,0,.2);
+      font-size: 23px;
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <section class="scene" data-scene="hsk">
+    <header class="topbar">
+      <div class="brand"><img src="../../../app/public/logo.svg" alt="">ChatMandarin</div>
+      <div class="nav"><span class="active-nav">Learning path</span><span>HSKK</span><span>Shadowing</span><span>Mistakes</span><span class="demo-badge"><i class="dot"></i>Demo session</span></div>
+    </header>
+    <main class="content">
+      <div class="section-title"><h1>Choose your HSK learning path</h1><p>Practice real-life speaking at the level that fits you.</p></div>
+      <div class="path-grid">
+        <article class="card path-card" data-cn="一"><div class="level">1</div><h2>Foundations</h2><p>Greetings, numbers, family, food and essential daily phrases.</p><div class="progress"><span style="width:76%"></span></div><div class="progress-label">8 of 12 scenarios ready</div></article>
+        <article class="card path-card" data-cn="二"><div class="level">2</div><h2>Everyday life</h2><p>Shopping, transport, routines and simple conversations.</p><div class="progress"><span style="width:58%"></span></div><div class="progress-label">7 of 12 scenarios ready</div></article>
+        <article class="card path-card" data-cn="三"><div class="level">3</div><h2>Independent speaker</h2><p>Restaurants, travel, work and expressing preferences naturally.</p><div class="progress"><span style="width:42%"></span></div><div class="progress-label">5 of 12 scenarios ready</div></article>
+        <article class="card path-card" data-cn="四"><div class="level">4</div><h2>Confident conversation</h2><p>Explain ideas, compare options and handle unexpected situations.</p><div class="progress"><span style="width:24%"></span></div><div class="progress-label">3 of 12 scenarios ready</div></article>
+        <article class="card path-card" data-cn="五"><div class="level">5</div><h2>Advanced expression</h2><p>Discuss culture, media and abstract topics with detail.</p><div class="progress"><span style="width:10%"></span></div><div class="progress-label">1 of 12 scenarios ready</div></article>
+        <article class="card path-card" data-cn="六"><div class="level">6</div><h2>Near-native practice</h2><p>Debate, nuance, idioms and complex professional situations.</p><div class="progress"><span style="width:0%"></span></div><div class="progress-label">Start your first scenario</div></article>
+      </div>
+    </main>
+  </section>
+
+  <section class="scene" data-scene="conversation">
+    <header class="topbar">
+      <div class="brand"><img src="../../../app/public/logo.svg" alt="">ChatMandarin</div>
+      <div class="nav"><span>Learning path</span><span>HSKK</span><span>Shadowing</span><span>Mistakes</span><span class="demo-badge"><i class="dot"></i>Demo session</span></div>
+    </header>
+    <main class="content conversation-layout">
+      <aside class="card session-panel">
+        <div class="scenario-icon">🍜</div><h1>At a restaurant</h1><div class="cn-label">在餐厅</div>
+        <div class="meta"><div class="meta-row"><span>Level</span><strong>HSK 3</strong></div><div class="meta-row"><span>Mode</span><strong>Gentle correction</strong></div><div class="meta-row"><span>Time</span><strong>01:42</strong></div></div>
+        <button class="end-btn">End conversation</button>
+      </aside>
+      <article class="card chat-card">
+        <div class="chat-head"><strong>Voice conversation</strong><span class="live">● Live · AI feedback enabled</span></div>
+        <div class="messages">
+          <div class="message"><div class="avatar">汉</div><div class="bubble">欢迎光临！请问几位？<div class="pinyin">Huānyíng guānglín! Qǐngwèn jǐ wèi?</div><div class="translation">Welcome! How many people?</div></div></div>
+          <div class="message user"><div class="avatar">You</div><div class="bubble">两位，我们想坐靠窗的位置。<div class="pinyin">Liǎng wèi, wǒmen xiǎng zuò kàochuāng de wèizhi.</div><div class="translation">Two. We would like a seat by the window.</div></div></div>
+          <div class="message"><div class="avatar">汉</div><div class="bubble">好的，请跟我来。想先喝点什么？<div class="pinyin">Hǎo de, qǐng gēn wǒ lái. Xiǎng xiān hē diǎn shénme?</div><div class="translation">Sure, follow me. What would you like to drink first?</div></div></div>
+        </div>
+        <div class="record-area"><div class="mic">●</div><p>Press and hold to speak · Release to send</p></div>
+      </article>
+    </main>
+  </section>
+
+  <section class="scene" data-scene="feedback">
+    <header class="topbar">
+      <div class="brand"><img src="../../../app/public/logo.svg" alt="">ChatMandarin</div>
+      <div class="nav"><span>Learning path</span><span>HSKK</span><span>Shadowing</span><span class="active-nav">Mistakes</span><span class="demo-badge"><i class="dot"></i>Demo session</span></div>
+    </header>
+    <main class="content feedback-layout">
+      <article class="card feedback-main">
+        <h1>Specific feedback, ready to retry</h1>
+        <div class="quote">“两位，我们想坐靠窗的位置。”</div>
+        <div class="correction"><strong>More natural phrasing</strong>两位，我们想坐<strong>在</strong>靠窗的位置。<br><small>Add 在 before a location after 坐.</small></div>
+        <div class="scores"><div class="score"><b>88</b><span>Pronunciation · 发音</span></div><div class="score"><b>91</b><span>Grammar · 语法</span></div><div class="score"><b>84</b><span>Word choice · 用词</span></div><div class="score"><b>82</b><span>Fluency · 流畅</span></div></div>
+        <div class="feedback-tip"><strong>Next attempt</strong><br>Say the full sentence once more, linking “坐在” without pausing. Keep the third tone in “想” light before the fourth tone in “坐”.</div>
+      </article>
+      <aside class="card feedback-side">
+        <div class="overall-ring"><div class="overall-value"><b>86</b><span>overall</span></div></div>
+        <h2>Good communication</h2><p>Your meaning was clear. One small grammar change makes the sentence more natural.</p>
+      </aside>
+    </main>
+  </section>
+
+  <section class="scene" data-scene="hskk">
+    <header class="topbar">
+      <div class="brand"><img src="../../../app/public/logo.svg" alt="">ChatMandarin</div>
+      <div class="nav"><span>Learning path</span><span class="active-nav">HSKK</span><span>Shadowing</span><span>Mistakes</span><span class="demo-badge"><i class="dot"></i>Demo session</span></div>
+    </header>
+    <main class="content">
+      <div class="section-title"><h1>HSKK-style speaking practice</h1><p>Choose a level and train with transcript-based prompts plus five-dimension feedback.</p></div>
+      <div class="hskk-grid">
+        <article class="card hskk-card"><div class="hanzi">初</div><h2>Beginner</h2><div class="range">Suggested HSK 1–2</div><ul><li>Listen and repeat</li><li>Answer short questions</li><li>Clear timed prompts</li><li>Five-dimension feedback</li></ul><button class="select-btn">Start beginner practice</button></article>
+        <article class="card hskk-card recommended"><span class="recommend">RECOMMENDED</span><div class="hanzi">中</div><h2>Intermediate</h2><div class="range">Suggested HSK 3–4</div><ul><li>Listen and repeat</li><li>Describe a situation</li><li>Answer open questions</li><li>Five-dimension feedback</li></ul><button class="select-btn">Start intermediate practice</button></article>
+        <article class="card hskk-card"><div class="hanzi">高</div><h2>Advanced</h2><div class="range">Suggested HSK 5–6</div><ul><li>Summarize passages</li><li>Express an opinion</li><li>Organize longer answers</li><li>Five-dimension feedback</li></ul><button class="select-btn">Start advanced practice</button></article>
+      </div>
+    </main>
+  </section>
+
+  <section class="scene banner-scene" data-scene="banner">
+    <div class="banner-wrap">
+      <div class="banner-copy">
+        <div class="mini-brand"><img src="../../../app/public/logo.svg" alt="">ChatMandarin</div>
+        <h1>Stop freezing.<br><em>Start speaking.</em></h1>
+        <p>HSK-graded voice conversations with specific feedback you can retry immediately.</p>
+        <div class="pills"><span class="pill">Pronunciation</span><span class="pill">Grammar</span><span class="pill">Word choice</span><span class="pill">Fluency</span></div>
+        <div class="cta">Free 5 minutes every day</div>
+      </div>
+      <div class="card banner-product">
+        <article class="card chat-card">
+          <div class="chat-head"><strong>At a restaurant · HSK 3</strong><span class="live">● Demo session</span></div>
+          <div class="messages">
+            <div class="message"><div class="avatar">汉</div><div class="bubble">欢迎光临！请问几位？<div class="translation">Welcome! How many people?</div></div></div>
+            <div class="message user"><div class="avatar">You</div><div class="bubble">两位，我们想坐在靠窗的位置。<div class="translation">Two. We would like a seat by the window.</div></div></div>
+            <div class="message"><div class="avatar">汉</div><div class="bubble">好的，请跟我来。<div class="translation">Sure, follow me.</div></div></div>
+          </div>
+          <div class="record-area"><div class="mic">●</div><p>Speak → feedback → retry → remember</p></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    const requested = new URLSearchParams(location.search).get('scene') || 'conversation';
+    const scene = document.querySelector(`[data-scene="${requested}"]`) || document.querySelector('[data-scene="conversation"]');
+    scene.classList.add('active');
+  </script>
+</body>
+</html>

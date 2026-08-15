@@ -172,12 +172,14 @@ Independent developer building ChatMandarin, a Mandarin speaking-practice web ap
 
 在开始带链接发布前准备以下素材：
 
-- 15 至 25 秒真实对话演示视频
-- HSK 分级场景截图
-- 四维反馈截图
-- HSKK 练习截图
-- Free/Plus/Pro 定价截图
-- 一张适合 X 链接帖的横版产品图
+- [x] 15 至 25 秒对话演示视频
+- [x] HSK 分级场景截图
+- [x] 四维反馈截图
+- [x] HSKK 练习截图
+- [x] Free/Plus/Pro 定价截图
+- [x] 一张适合 X 链接帖的横版产品图
+
+已完成素材位于仓库根目录的 `launch/assets/`，具体来源、用途和合规说明见 `launch/assets/README.md`。功能截图使用明确标注的演示数据；定价图来自线上公开页面。
 
 素材必须移除：邮箱、用户 ID、后台项目 ID、密钥、账单信息、浏览器私人标签和真实用户数据。
 

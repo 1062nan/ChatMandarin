@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ChatMandarin short demo renderer</title>
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #172434; color: white; font-family: system-ui, sans-serif; }
+    main { display: grid; place-items: center; min-height: 100vh; gap: 18px; align-content: center; }
+    canvas { width: 1280px; height: 720px; border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.42); background: #f7f3e9; }
+    button { padding: 13px 20px; border: 0; border-radius: 10px; background: #cf3b27; color: white; font-weight: 800; cursor: pointer; }
+    p { margin: 0; color: #cbd2db; }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="video" width="1280" height="720"></canvas>
+    <button id="render">Render short MP4 demo</button>
+    <p id="status">Ready</p>
+  </main>
+  <script>
+    const canvas = document.querySelector('#video');
+    const ctx = canvas.getContext('2d');
+    const button = document.querySelector('#render');
+    const status = document.querySelector('#status');
+    const slides = [
+      { src: '../01-hsk-learning-path.png', title: 'Choose your HSK level', sub: 'Practice speaking at the right vocabulary range', start: 0, end: 4 },
+      { src: '../02-voice-conversation-demo.png', title: 'Speak in a real-life scenario', sub: 'Low-pressure voice practice, one turn at a time', start: 4, end: 9 },
+      { src: '../03-four-dimension-feedback.png', title: 'Get specific feedback', sub: 'Pronunciation · Grammar · Word choice · Fluency', start: 9, end: 14 },
+      { src: '../04-hskk-practice.png', title: 'Train with HSKK-style prompts', sub: 'Beginner, intermediate and advanced practice', start: 14, end: 18 },
+      { src: '../06-x-product-banner.png', title: 'Start free', sub: '5 minutes every day · No credit card required', start: 18, end: 20 }
+    ];
+
+    const loaded = Promise.all(slides.map(slide => new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ ...slide, image });
+      image.onerror = reject;
+      image.src = slide.src;
+    })));
+
+    function ease(value) { return value * value * (3 - 2 * value); }
+
+    function paintImage(image, progress, alpha = 1) {
+      const scale = 1.018 + progress * .022;
+      const sourceRatio = image.width / image.height;
+      const targetRatio = canvas.width / canvas.height;
+      let sw = image.width;
+      let sh = image.height;
+      if (sourceRatio > targetRatio) sw = sh * targetRatio;
+      else sh = sw / targetRatio;
+      sw /= scale;
+      sh /= scale;
+      const sx = (image.width - sw) / 2;
+      const sy = (image.height - sh) / 2;
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(image, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      ctx.globalAlpha = 1;
+    }
+
+    function paintCaption(title, sub, alpha) {
+      ctx.globalAlpha = alpha;
+      const gradient = ctx.createLinearGradient(0, 520, 0, 720);
+      gradient.addColorStop(0, 'rgba(17,28,42,0)');
+      gradient.addColorStop(1, 'rgba(17,28,42,.92)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 500, 1280, 220);
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 38px system-ui, sans-serif';
+      ctx.fillText(title, 54, 632);
+      ctx.fillStyle = '#e9edf1';
+      ctx.font = '400 21px system-ui, sans-serif';
+      ctx.fillText(sub, 55, 672);
+      ctx.globalAlpha = 1;
+    }
+
+    function draw(slideData, seconds) {
+      const currentIndex = slideData.findIndex(s => seconds >= s.start && seconds < s.end) < 0 ? slideData.length - 1 : slideData.findIndex(s => seconds >= s.start && seconds < s.end);
+      const current = slideData[currentIndex];
+      const local = Math.max(0, Math.min(1, (seconds - current.start) / (current.end - current.start)));
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      paintImage(current.image, ease(local));
+      const fadeIn = Math.min(1, Math.max(0, (seconds - current.start) / .45));
+      const fadeOut = Math.min(1, Math.max(0, (current.end - seconds) / .45));
+      const captionAlpha = Math.min(fadeIn, fadeOut);
+      if (currentIndex < slideData.length - 1 && current.end - seconds < .5) {
+        const next = slideData[currentIndex + 1];
+        const mix = 1 - ((current.end - seconds) / .5);
+        paintImage(next.image, 0, ease(mix));
+      }
+      paintCaption(current.title, current.sub, captionAlpha);
+    }
+
+    loaded.then(slideData => draw(slideData, 0));
+
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      status.textContent = 'Rendering…';
+      const slideData = await loaded;
+      // The embedded browser intentionally throttles background canvas paints.
+      // Six captured frames per second keeps the exported media duration close
+      // to the 20-second storyboard while remaining smooth enough for slides.
+      const stream = canvas.captureStream(6);
+      const preferredTypes = ['video/mp4;codecs=avc1.42E01E', 'video/mp4', 'video/webm;codecs=vp9'];
+      const selectedType = preferredTypes.find(type => MediaRecorder.isTypeSupported(type));
+      const recorder = new MediaRecorder(stream, { mimeType: selectedType, videoBitsPerSecond: 3200000 });
+      const chunks = [];
+      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      const finished = new Promise(resolve => { recorder.onstop = resolve; });
+      const start = performance.now();
+      const renderWallSeconds = 23.3;
+      recorder.start(500);
+      await new Promise(resolve => {
+        function frame(now) {
+          const wallSeconds = (now - start) / 1000;
+          const seconds = Math.min(20, wallSeconds * 20 / renderWallSeconds);
+          draw(slideData, seconds);
+          status.textContent = `Rendering ${seconds.toFixed(1)} / 20.0 seconds`;
+          if (wallSeconds < renderWallSeconds) requestAnimationFrame(frame);
+          else resolve();
+        }
+        requestAnimationFrame(frame);
+      });
+      recorder.stop();
+      await finished;
+      const blob = new Blob(chunks, { type: selectedType });
+      const isMp4 = selectedType.startsWith('video/mp4');
+      const response = await fetch(isMp4 ? '/save-video-mp4' : '/save-video', { method: 'POST', headers: { 'Content-Type': selectedType }, body: blob });
+      if (!response.ok) throw new Error('Could not save video');
+      status.textContent = `Saved ${Math.round(blob.size / 1024)} KB · ${selectedType}`;
+      button.textContent = 'Rendered successfully';
+    });
+  </script>
+</body>
+</html>
