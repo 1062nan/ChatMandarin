@@ -179,7 +179,7 @@ Independent developer building ChatMandarin, a Mandarin speaking-practice web ap
 - [x] Free/Plus/Pro 定价截图
 - [x] 一张适合 X 链接帖的横版产品图
 
-已完成素材位于仓库根目录的 `launch/assets/`，具体来源、用途和合规说明见 `launch/assets/README.md`。功能截图使用明确标注的演示数据；定价图来自线上公开页面。
+演示版素材位于仓库根目录的 `launch/assets/`；首选发布的真实生产页面素材位于 `launch/assets-real/`。具体来源、用途和合规说明分别见两个目录的 `README.md`。真实版使用临时测试账号完成实际生产流程，不包含真实客户数据。
 
 素材必须移除：邮箱、用户 ID、后台项目 ID、密钥、账单信息、浏览器私人标签和真实用户数据。
 
