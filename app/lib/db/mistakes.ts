@@ -29,12 +29,22 @@ export async function createMistakesFromErrors(opts: {
   const subCtx = await getSubscriptionContext(opts.userId)
   let allowedNew = opts.errors.length
   if (subCtx.features.mistakeCapacity !== null) {
-    const { count } = await supabase
-      .from('mistakes')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', opts.userId)
-      .eq('mastered', false)
-    const current = count || 0
+    // Quarantined legacy tutor hints must not consume the learner's capacity.
+    // Scan bounded pages, stopping as soon as the plan limit is reached.
+    let current = 0
+    for (let offset = 0; current < subCtx.features.mistakeCapacity; offset += 100) {
+      const { data: existing, error: capacityError } = await supabase
+        .from('mistakes')
+        .select('correct, explanation')
+        .eq('user_id', opts.userId)
+        .eq('mastered', false)
+        .order('id')
+        .range(offset, offset + 99)
+      if (capacityError) throw capacityError
+      const rows = existing || []
+      current += rows.filter(isReviewableMistake).length
+      if (rows.length < 100) break
+    }
     const remaining = Math.max(0, subCtx.features.mistakeCapacity - current)
     allowedNew = Math.min(opts.errors.length, remaining)
     if (allowedNew === 0) {
@@ -64,7 +74,8 @@ export async function createMistakesFromErrors(opts: {
   const { error } = await supabase.from('mistakes').insert(records)
   if (error) {
     console.error('Failed to save mistakes:', error)
-    // 不 throw（错题保存失败不应中断对话）
+    // The conversation route preserves the saved turn and exposes a warning.
+    throw error
   }
 }
 

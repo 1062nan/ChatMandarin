@@ -5,7 +5,7 @@
 - Zero-turn/whitespace-only sessions close without practice credit. Summary statistics use persisted learner turns and exclude unavailable scores.
 - Unit detail and recommendations use the destination unit's unlock threshold.
 - Shadowing links retain the selected sentence, including sentences outside the default list, and reset correctly on navigation.
-- Tutor vocabulary hints no longer become learner mistakes. Historical placeholder/tutor-hint rows are excluded from review without deleting records.
+- Tutor vocabulary hints no longer become learner mistakes. Historical placeholder/tutor-hint rows are excluded from review and free-plan capacity without deleting records. Journal save failures are surfaced as warnings on an otherwise saved conversation.
 - Conversation feedback exposes transcript-based grammar and word choice only. Plain-text model replies remain usable without fabricated scores.
 - Shadowing and dubbing report recognized-text matching, not acoustic pronunciation, tone, emotion, rhythm, or spoken fluency.
 - HSKK practice validates model grammar/vocabulary/content results, rejects failed/empty ASR, and does not claim an official score or pass prediction.
@@ -14,7 +14,7 @@
 
 ## Verification
 
-- 72 tests across 14 files pass, including actual route handlers with mocked ASR/LLM/database boundaries, malformed output, failure paths, and selected-content routing.
+- 76 tests across 15 files pass, including actual route handlers with mocked ASR/LLM/database boundaries, malformed output, failure paths, and selected-content routing.
 - Final aggregate TypeScript, ESLint (zero errors, 28 existing warnings), production Next build, and diff whitespace checks passed.
 - Local compilation uses explicit fake Supabase values, never production credentials. It does not prove live database or speech integration.
 - No schema migrations, payment actions, account entitlement changes, or historical data deletions are included in this batch.
