@@ -1,6 +1,7 @@
 /**
  * 对话数据访问层
  */
+import { meanMeasuredScores } from '../ai/conversation-feedback'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Conversation, ConversationTurn, MistakeEntry } from '@/lib/db/types'
 
@@ -54,14 +55,14 @@ export async function saveConversationTurn(opts: {
   aiText: string
   errors: MistakeEntry[]
   scores: {
-    pronunciation: number
-    grammar: number
-    fluency: number
-    word_choice: number
+    pronunciation: number | null
+    grammar: number | null
+    fluency: number | null
+    word_choice: number | null
   }
   userAudioDurationMs?: number
   aiResponseLatencyMs?: number
-}): Promise<ConversationTurn> {
+}): Promise<ConversationTurn & { statsUpdateFailed?: boolean }> {
   const supabase = await createSupabaseServerClient()
   const { data, error } = await supabase
     .from('conversation_turns')
@@ -83,8 +84,14 @@ export async function saveConversationTurn(opts: {
 
   if (error) throw error
 
-  // 更新对话的 total_turns 和平均分
-  await updateConversationStats(opts.conversationId)
+  // The turn is already durable. A derived-summary failure must not invite
+  // the client to resubmit the same learner turn as a new practice attempt.
+  try {
+    await updateConversationStats(opts.conversationId)
+  } catch (statsError) {
+    console.error('Conversation saved but summary update failed:', statsError)
+    return { ...(data as ConversationTurn), statsUpdateFailed: true }
+  }
 
   return data as ConversationTurn
 }
@@ -94,18 +101,19 @@ export async function saveConversationTurn(opts: {
  */
 export async function updateConversationStats(conversationId: string): Promise<void> {
   const supabase = await createSupabaseServerClient()
-  const { data: turns } = await supabase
+  const { data: turns, error: turnsError } = await supabase
     .from('conversation_turns')
     .select('pronunciation_score, grammar_score, fluency_score, word_choice_score')
     .eq('conversation_id', conversationId)
 
+  if (turnsError) throw turnsError
   if (!turns || turns.length === 0) return
 
   const count = turns.length
   const avg = (field: string) =>
-    Math.round(turns.reduce((sum, t) => sum + ((t as any)[field] || 0), 0) / count)
+    meanMeasuredScores(turns.map(t => (t as any)[field]))
 
-  await supabase
+  const { error: updateError } = await supabase
     .from('conversations')
     .update({
       total_turns: count,
@@ -115,6 +123,8 @@ export async function updateConversationStats(conversationId: string): Promise<v
       avg_word_choice: avg('word_choice_score')
     })
     .eq('id', conversationId)
+
+  if (updateError) throw updateError
 }
 
 /**
@@ -125,6 +135,19 @@ export async function endConversation(
   userId: string
 ): Promise<{ ended: boolean }> {
   const supabase = await createSupabaseServerClient()
+
+  // Count persisted learner input, not the denormalized total_turns cache.
+  // A greeting or opening then closing the screen is not completed practice.
+  const { data: turns, error: turnsError } = await supabase
+    .from('conversation_turns')
+    .select('user_text')
+    .eq('conversation_id', conversationId)
+
+  if (turnsError) throw turnsError
+  const hasPractice = (turns || []).some(turn => Boolean(turn.user_text?.trim()))
+  // Retry any derived summary that failed after the durable turn insert.
+  // Do this before closing so a transient failure remains safely retryable.
+  if (hasPractice) await updateConversationStats(conversationId)
 
   // 只允许结束当前用户尚未结束的对话。条件更新让重复点击、请求重试和
   // 并发请求保持幂等，避免 total_conversations 被重复累计。
@@ -139,6 +162,7 @@ export async function endConversation(
 
   if (endError) throw endError
   if (!endedConversation) return { ended: false }
+  if (!hasPractice) return { ended: true }
 
   // 更新用户 profile 的 total_conversations
   const { data: profile, error: profileError } = await supabase

@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { getSubscriptionContext, consumeQuota } from '@/lib/subscription/tier'
-import { comparePracticeTexts, calculateCompletionScore } from '@/lib/practice/scoring'
+import { comparePracticeTexts } from '@/lib/practice/scoring'
 import { validateAudioFile } from '@/lib/practice/request'
 
 export const runtime = 'nodejs'
@@ -74,16 +74,14 @@ export async function POST(request: NextRequest) {
     // 逐字对比
     const originalText = sentence.text_zh
     const comparison = comparePracticeTexts(asrResult.text, originalText)
-    const pronunciationScore = comparison.accuracyScore
-    const fluencyScore = calculateCompletionScore(asrResult.text, originalText)
 
     // 保存记录
     const { error: saveError } = await supabase.from('shadowing_records').insert({
       user_id: profile.id,
       sentence_id: sentenceId,
-      pronunciation_score: pronunciationScore,
+      pronunciation_score: null,
       tone_score: null,
-      fluency_score: fluencyScore,
+      fluency_score: null,
       transcript: asrResult.text,
       errors: comparison.errors
     })
@@ -92,9 +90,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       transcript: asrResult.text,
       original: originalText,
-      pronunciation_score: pronunciationScore,
+      transcript_match_score: comparison.accuracyScore,
+      assessment_basis: 'transcript_only',
+      pronunciation_score: null,
       tone_score: null,
-      fluency_score: fluencyScore,
+      fluency_score: null,
       char_comparison: comparison.charByChar,
       errors: comparison.errors
     })

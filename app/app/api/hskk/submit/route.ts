@@ -15,7 +15,7 @@
  *     "test_id": "uuid",
  *     "scores": { pronunciation, fluency, grammar, vocabulary, content },
  *     "total_score": 0-100,
- *     "predicted_pass": boolean,
+ *     "predicted_pass": null,
  *     "major_issues": [...],
  *     "strengths": [...],
  *     "overall_feedback": "..."
@@ -30,6 +30,7 @@ import { buildHSKKPrompt } from '@/lib/ai/prompts'
 import { getSubscriptionContext, consumeQuota } from '@/lib/subscription/tier'
 import { HSKK_CONTENT, type HSKKLevel } from '@/lib/hskk/content'
 import { validateAudioFile } from '@/lib/practice/request'
+import { isScorableTranscript, validateHSKKContentAssessment } from '@/lib/practice/hskk-scoring'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -113,28 +114,23 @@ export async function POST(request: NextRequest) {
     const qaQuestions = test.qa.questions.map((question) => question.question)
     const picturePrompt = test.pictureDescription.prompt
 
-    // 5. 创建 hskk_test 记录
+    // All sections must transcribe successfully before creating or scoring a test.
+    const [readResult, qaResult, pictureResult] = await Promise.all([
+      recognizeSpeech(await sectionReadAudio.arrayBuffer(), readAudio.format, 16000),
+      recognizeSpeech(await sectionQaAudio.arrayBuffer(), qaAudio.format, 16000),
+      recognizeSpeech(await sectionPictureAudio.arrayBuffer(), pictureAudio.format, 16000),
+    ])
+    if (![readResult, qaResult, pictureResult].every((result) => isScorableTranscript(result.text))) {
+      return NextResponse.json({ error: 'Could not understand all three sections. Please record again.' }, { status: 422 })
+    }
     const { data: hskkTest, error: dbError } = await supabase
       .from('hskk_tests')
-      .insert({
-        user_id: profile.id,
-        level: level as HSKKLevel,
-        status: 'processing'
-      })
-      .select()
-      .single()
-
+      .insert({ user_id: profile.id, level: level as HSKKLevel, status: 'processing' })
+      .select().single()
     if (dbError) throw dbError
 
-    // 6. ASR 3 个部分
-    const [readResult, qaResult, pictureResult] = await Promise.all([
-      safeASR(sectionReadAudio),
-      safeASR(sectionQaAudio),
-      safeASR(sectionPictureAudio)
-    ])
-
     // 保存转录到数据库
-    await supabase
+    const { error: transcriptSaveError } = await supabase
       .from('hskk_tests')
       .update({
         section_read_text: readResult.text,
@@ -145,6 +141,8 @@ export async function POST(request: NextRequest) {
         section_picture_text: pictureResult.text
       })
       .eq('id', hskkTest.id)
+
+    if (transcriptSaveError) throw transcriptSaveError
 
     // 7. DeepSeek 评分（综合 3 部分）
     const scoringPrompt = buildHSKKPrompt({
@@ -158,15 +156,16 @@ export async function POST(request: NextRequest) {
 
     let scoreResult
     try {
-      scoreResult = await getHSKKScore(scoringPrompt)
+      scoreResult = validateHSKKContentAssessment(await getHSKKScore(scoringPrompt))
     } catch (scoringError) {
       console.error('DeepSeek scoring failed:', scoringError)
-      // 降级：返回基础结果
-      await supabase
+      // Invalid or unavailable assessment must not become a successful report.
+      const { error: failureSaveError } = await supabase
         .from('hskk_tests')
         .update({ status: 'failed' })
         .eq('id', hskkTest.id)
 
+      if (failureSaveError) throw failureSaveError
       return NextResponse.json(
         { error: 'Scoring failed. Please try again.' },
         { status: 500 }
@@ -175,7 +174,7 @@ export async function POST(request: NextRequest) {
 
     // 8. 保存评分到数据库
     const latencyMs = Date.now() - startTime
-    await supabase
+    const { error: scoreSaveError } = await supabase
       .from('hskk_tests')
       .update({
         total_score: scoreResult.total_score,
@@ -190,6 +189,8 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', hskkTest.id)
 
+    if (scoreSaveError) throw scoreSaveError
+
     // 9. 返回结果
     return NextResponse.json({
       test_id: hskkTest.id,
@@ -200,7 +201,8 @@ export async function POST(request: NextRequest) {
       },
       scores: scoreResult.scores,
       total_score: scoreResult.total_score,
-      predicted_pass: scoreResult.predicted_pass,
+      predicted_pass: null,
+      assessment_basis: scoreResult.assessment_basis,
       major_issues: scoreResult.major_issues,
       strengths: scoreResult.strengths,
       overall_feedback: scoreResult.overall_feedback,
@@ -209,24 +211,13 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('HSKK submission failed:', error)
     return NextResponse.json(
-      { error: 'Failed to process HSKK test', details: (error as Error).message },
+      { error: 'Failed to process HSKK test. Please try again.' },
       { status: 500 }
     )
   }
 }
 
 // ============ 辅助函数 ============
-
-async function safeASR(audioFile: File): Promise<{ text: string; confidence: number }> {
-  try {
-    const audioBuffer = await audioFile.arrayBuffer()
-    const format = (audioFile.name.split('.').pop() || 'wav').toLowerCase()
-    return await recognizeSpeech(audioBuffer, format, 16000)
-  } catch (error) {
-    console.error('ASR failed for section:', error)
-    return { text: '[ASR failed]', confidence: 0 }
-  }
-}
 
 function extractAnswer(fullTranscript: string, answerIndex: number): string {
   // 粗略分割多个答案（按句号或停顿）

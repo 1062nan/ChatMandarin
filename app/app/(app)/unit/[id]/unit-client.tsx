@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 
 interface UnitClientProps {
+  nextUnlockScore: number | null
   unit: {
     id: string
     hsk_level: number
@@ -59,6 +60,7 @@ interface UnitClientProps {
 
 export function UnitClient({
   unit,
+  nextUnlockScore,
   scenarios,
   shadowing,
   dubbing,
@@ -116,9 +118,11 @@ export function UnitClient({
               <Star className="h-3 w-3 fill-gold" /> 已掌握 · 满分通关
             </span>
           )}
-          <span className="text-xs text-muted-foreground">
-            · 解锁下一关需 {unit.unlock_score}+ 分
-          </span>
+          {nextUnlockScore !== null && (
+            <span className="text-xs text-muted-foreground">
+              · 解锁下一关需 {nextUnlockScore}+ 分
+            </span>
+          )}
         </div>
       </div>
 
@@ -219,7 +223,7 @@ export function UnitClient({
               </h2>
               <div className="grid gap-2 sm:grid-cols-2">
                 {shadowing.slice(0, 8).map((s) => (
-                  <Link key={s.id} href="/shadowing">
+                  <Link key={s.id} href={`/shadowing?sentence=${encodeURIComponent(s.id)}`}>
                     <Card className="cursor-pointer transition-all hover:border-jade/40">
                       <CardContent className="p-3">
                         <p className="text-sm font-medium">{s.text_zh}</p>

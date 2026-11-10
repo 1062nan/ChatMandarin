@@ -4,6 +4,7 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Mistake, MistakeEntry, MistakeType } from '@/lib/db/types'
 import { getSubscriptionContext } from '@/lib/subscription/tier'
+import { isReviewableMistake } from '@/lib/ai/conversation-feedback'
 
 /**
  * 批量创建错题（从一轮对话的 errors 中提取）
@@ -19,7 +20,8 @@ export async function createMistakesFromErrors(opts: {
   hskLevel: number
   scenario: string
 }): Promise<void> {
-  if (!opts.errors || opts.errors.length === 0) return
+  opts = { ...opts, errors: (opts.errors || []).filter(isReviewableMistake) }
+  if (opts.errors.length === 0) return
 
   const supabase = await createSupabaseServerClient()
 
@@ -81,7 +83,7 @@ export async function getPendingMistakes(userId: string, limit: number = 20): Pr
     .limit(limit)
 
   if (error) throw error
-  return (data || []) as Mistake[]
+  return ((data || []) as Mistake[]).filter(isReviewableMistake)
 }
 
 /**

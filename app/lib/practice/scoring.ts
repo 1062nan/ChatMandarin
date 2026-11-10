@@ -1,4 +1,4 @@
-const STRIPPED_PUNCTUATION = /[\s，。！？、,.!?]/g
+const STRIPPED_PUNCTUATION = /[\s\p{P}\p{S}]/gu
 
 export interface CharacterComparison {
   char: string
@@ -6,8 +6,8 @@ export interface CharacterComparison {
   correct: boolean
 }
 
-export interface PronunciationError {
-  type: 'pronunciation'
+export interface TranscriptError {
+  type: 'transcript'
   user_said: string
   correct: string
   explanation: string
@@ -20,7 +20,7 @@ export function normalizePracticeText(value: string): string {
 export function comparePracticeTexts(userText: string, original: string): {
   accuracyScore: number
   charByChar: CharacterComparison[]
-  errors: PronunciationError[]
+  errors: TranscriptError[]
 } {
   const userChars = [...normalizePracticeText(userText)]
   const originalChars = [...normalizePracticeText(original)]
@@ -72,14 +72,14 @@ export function comparePracticeTexts(userText: string, original: string): {
   const errors = charByChar
     .filter((entry) => !entry.correct && entry.userSaid !== '_')
     .map((entry) => ({
-      type: 'pronunciation' as const,
+      type: 'transcript' as const,
       user_said: entry.userSaid,
       correct: entry.char,
-      explanation: `Said "${entry.userSaid}" instead of "${entry.char}"`,
+      explanation: `Transcript contains "${entry.userSaid}" instead of "${entry.char}"`,
     }))
 
   return {
-    accuracyScore: Math.round(
+    accuracyScore: originalChars.length === 0 ? 0 : Math.round(
       (1 - distances[originalChars.length][userChars.length]
         / Math.max(originalChars.length, userChars.length, 1)) * 100
     ),

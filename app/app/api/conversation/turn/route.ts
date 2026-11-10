@@ -30,7 +30,6 @@ import { buildConversationPrompt } from '@/lib/ai/prompts'
 import type { ChatMessage } from '@/lib/ai/deepseek'
 import { saveConversationTurn, getConversationTurns } from '@/lib/db/conversations'
 import { createMistakesFromErrors } from '@/lib/db/mistakes'
-import { checkVocabularyLevel, enhanceErrorsWithVocab } from '@/lib/ai/vocab-filter'
 import { analyzeAudio } from '@/lib/audio/analyze'
 import { getSubscriptionContext, consumeConversationSeconds } from '@/lib/subscription/tier'
 import { validateAudioFile } from '@/lib/practice/request'
@@ -140,8 +139,8 @@ export async function POST(request: NextRequest) {
     try {
       const asrResult = await recognizeSpeech(audioBuffer, audioFormat, 16000)
       userText = asrResult.text
-      console.log('[conversation/turn] ASR result:', {
-        text: userText,
+      console.log('[conversation/turn] ASR completed:', {
+        textLength: userText.length,
         confidence: asrResult.confidence,
       })
     } catch (asrError) {
@@ -202,11 +201,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 8.5 HSK 词汇后处理检查（方案 C）
-    const vocabCheck = checkVocabularyLevel(aiResponse.reply, hskLevel)
-    if (!vocabCheck.passed) {
-      aiResponse.errors = enhanceErrorsWithVocab(aiResponse.errors || [], vocabCheck)
-    }
+    // Only learner transcript corrections belong in feedback and the journal.
+    // Vocabulary used by the tutor must never be attributed to the learner.
 
     // 9. TTS：AI 文字 → 语音
     let aiAudioBase64: string | null = null
@@ -221,8 +217,9 @@ export async function POST(request: NextRequest) {
     // 10. 保存到数据库
     const latencyMs = Date.now() - startTime
 
+    let statsUpdateFailed = false
     try {
-      await saveConversationTurn({
+      const savedTurn = await saveConversationTurn({
         conversationId,
         turnIndex,
         userText,
@@ -233,8 +230,18 @@ export async function POST(request: NextRequest) {
         aiResponseLatencyMs: latencyMs
       })
 
-      // 保存错题
-      if (aiResponse.errors && aiResponse.errors.length > 0) {
+      statsUpdateFailed = savedTurn.statsUpdateFailed === true
+
+    } catch (dbError) {
+      console.error('Database save failed:', dbError)
+      return NextResponse.json({ error: 'Could not save your practice. Please try again.' }, { status: 500 })
+    }
+
+    const warnings: string[] = []
+    if (statsUpdateFailed) warnings.push('Your practice was saved, but the summary update is pending. It will retry when you end this conversation.')
+    // Journal enrichment must not turn a durable practice save into a retry.
+    if (aiResponse.errors && aiResponse.errors.length > 0) {
+      try {
         await createMistakesFromErrors({
           userId: profile.id,
           errors: aiResponse.errors,
@@ -242,11 +249,10 @@ export async function POST(request: NextRequest) {
           hskLevel,
           scenario: scenarioId
         })
+      } catch (journalError) {
+        console.error('Practice saved but mistake journal update failed:', journalError)
+        warnings.push('Your practice was saved, but corrections could not be added to the mistake journal.')
       }
-
-    } catch (dbError) {
-      console.error('Database save failed:', dbError)
-      // 数据库失败不阻断用户体验
     }
 
     // 11. 返回结果
@@ -256,6 +262,8 @@ export async function POST(request: NextRequest) {
       ai_audio: aiAudioBase64,
       errors: aiResponse.errors || [],
       scores: aiResponse.scores,
+      assessment_basis: 'transcript_only',
+      ...(warnings.length ? { warning: warnings.join(' ') } : {}),
       conversation_complete: aiResponse.conversation_complete || false,
       encouragement: aiResponse.encouragement || null,
       latency_ms: latencyMs

@@ -33,6 +33,17 @@ export default async function UnitPage({
     return
   }
 
+  // unlock_score belongs to the destination unit, not the current unit.
+  const { data: nextUnit, error: nextUnitError } = await supabase
+    .from('learning_units')
+    .select('unlock_score')
+    .eq('is_active', true)
+    .gt('sort_order', unit.sort_order)
+    .order('sort_order')
+    .limit(1)
+    .maybeSingle()
+  if (nextUnitError) throw nextUnitError
+
   // 拉该单元下的所有内容
   const [{ data: scenarios }, { data: shadowing }, { data: dubbing }, { data: progress }] = await Promise.all([
     supabase
@@ -73,6 +84,7 @@ export default async function UnitPage({
 
       <UnitClient
         unit={unit as any}
+        nextUnlockScore={nextUnit?.unlock_score ?? null}
         scenarios={(scenarios as any[]) || []}
         shadowing={(shadowing as any[]) || []}
         dubbing={(dubbing as any[]) || []}

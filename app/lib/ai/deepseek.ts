@@ -5,6 +5,7 @@
  */
 
 import { jsonrepair } from 'jsonrepair'
+import { normalizeConversationFeedback, type TranscriptScores } from './conversation-feedback'
 
 const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY
@@ -20,15 +21,10 @@ export interface ConversationResponse {
     type: 'tone' | 'grammar' | 'word' | 'fluency'
     user_said: string
     correct: string
-    explanation: string
-    severity: 'low' | 'medium' | 'high'
+    explanation?: string
+    severity?: 'low' | 'medium' | 'high'
   }>
-  scores: {
-    pronunciation: number
-    grammar: number
-    word_choice: number
-    fluency: number
-  }
+  scores: TranscriptScores
   conversation_complete: boolean
   encouragement?: string
 }
@@ -127,7 +123,7 @@ export async function getConversationResponse(
   // 2. markdown code fence 提取
   // 3. 第一个 { 到最后一个 } 子串
   // 4. jsonrepair 修复 LLM 常见错误（缺引号、缺括号、尾随逗号、混入文字等）
-  const tryParse = (text: string): ConversationResponse | null => {
+  const tryParse = (text: string): unknown => {
     // 标准 parse
     try {
       return JSON.parse(text) as ConversationResponse
@@ -165,34 +161,13 @@ export async function getConversationResponse(
   }
 
   const parsed = tryParse(content)
-  if (parsed) {
-    // 确保 reply 字段有内容
-    if (!parsed.reply && typeof parsed === 'object') {
-      parsed.reply = content.substring(0, 100)
-    }
-    return parsed
-  }
-
-  // 最后 fallback：DeepSeek 完全没返回 JSON 结构（纯自然语言）
-  // 直接当 reply，对话能继续
-  console.warn(
-    '[DeepSeek] content is not JSON even after jsonrepair, using plaintext fallback. finish_reason:',
-    result.finishReason,
-    'first 80 chars:',
-    content.substring(0, 80)
-  )
-  return {
-    reply: content.trim(),
-    errors: [],
-    scores: {
-      pronunciation: 80,
-      grammar: 80,
-      word_choice: 80,
-      fluency: 80,
-    },
-    conversation_complete: false,
-    encouragement: undefined,
-  }
+  const userText = [...messages].reverse().find(message => message.role === 'user')?.content || ''
+  // Preserve plain-language replies, but never manufacture a score when the
+  // model omitted a dimension or when only a transcript was assessed.
+  const fallbackReply = typeof parsed === 'string' && parsed.trim()
+    ? parsed.trim()
+    : parsed ? '请再说一次。' : content.trim()
+  return normalizeConversationFeedback(parsed, fallbackReply, userText)
 }
 
 /**

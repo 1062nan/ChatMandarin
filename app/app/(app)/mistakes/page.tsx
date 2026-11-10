@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { BookOpen, CheckCircle2, AlertCircle, Play } from 'lucide-react'
 import type { Mistake } from '@/lib/db/types'
+import { isReviewableMistake } from '@/lib/ai/conversation-feedback'
 import { ReviewSession } from '@/components/mistakes/review-session'
 
 export const dynamic = 'force-dynamic'
@@ -48,8 +49,8 @@ export default function MistakesPage() {
           .limit(20)
       ])
 
-      setPendingMistakes((pendingRes.data || []) as Mistake[])
-      setMasteredMistakes((masteredRes.data || []) as Mistake[])
+      setPendingMistakes(((pendingRes.data || []) as Mistake[]).filter(isReviewableMistake))
+      setMasteredMistakes(((masteredRes.data || []) as Mistake[]).filter(isReviewableMistake))
     } finally {
       setLoading(false)
     }

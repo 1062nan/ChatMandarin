@@ -7,6 +7,12 @@ import {
 } from './scoring'
 
 describe('practice scoring', () => {
+  it('does not grant full credit to an empty target', () => {
+    expect(comparePracticeTexts('', '').accuracyScore).toBe(0)
+    expect(comparePracticeTexts('你好', '……').accuracyScore).toBe(0)
+    expect(normalizePracticeText('“你好”：……（！）')).toBe('你好')
+  })
+
   it('ignores whitespace and Chinese punctuation', () => {
     expect(normalizePracticeText('你 好，世界！')).toBe('你好世界')
     expect(comparePracticeTexts('你 好，世界！', '你好世界。').accuracyScore).toBe(100)

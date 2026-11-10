@@ -21,15 +21,18 @@ interface Sentence {
 interface ScoreResult {
   transcript: string
   original: string
-  pronunciation_score: number
+  transcript_match_score: number
+  pronunciation_score: null
   tone_score: number | null
-  fluency_score: number
+  fluency_score: null
   char_comparison: Array<{ char: string; userSaid: string; correct: boolean }>
   errors: any[]
 }
 
-export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]; ttsVoice: string }) {
-  const [currentIndex, setCurrentIndex] = useState(0)
+export function ShadowingClient({ sentences, ttsVoice, initialSentenceId }: { sentences: Sentence[]; ttsVoice: string; initialSentenceId?: string }) {
+  const [currentIndex, setCurrentIndex] = useState(() =>
+    Math.max(0, sentences.findIndex(sentence => sentence.id === initialSentenceId))
+  )
   const [isRecording, setIsRecording] = useState(false)
   const [audioLevel, setAudioLevel] = useState(0)
   const [processing, setProcessing] = useState(false)
@@ -123,7 +126,7 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
   }
 
   const avgScore = score
-    ? Math.round((score.pronunciation_score + score.fluency_score) / 2)
+    ? score.transcript_match_score
     : 0
 
   return (
@@ -184,10 +187,9 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
               </div>
             </div>
 
-            <div className="mb-4 grid grid-cols-2 gap-3">
+            <div className="mb-4 grid grid-cols-1 gap-3">
               {[
-                { label: 'Pronunciation', value: score.pronunciation_score },
-                { label: 'Fluency', value: score.fluency_score }
+                { label: 'Transcript match', value: score.transcript_match_score }
               ].map(s => (
                 <div key={s.label} className="text-center">
                   <div className="mx-auto mb-1 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -199,7 +201,7 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
               ))}
             </div>
             <p className="mb-4 text-center text-xs text-muted-foreground">
-              Tone is not scored because the current recognizer does not provide acoustic tone assessment.
+              This compares recognized words with the reference. Pronunciation, tone, and spoken fluency are not assessed. Speech recognition may make mistakes.
             </p>
 
             {/* Char comparison */}
@@ -260,7 +262,7 @@ export function ShadowingClient({ sentences, ttsVoice }: { sentences: Sentence[]
       {processing && (
         <div className="flex flex-col items-center gap-3 py-8">
           <Loader2 className="h-8 w-8 animate-spin text-vermilion" />
-          <p className="text-sm text-muted-foreground">Scoring your pronunciation...</p>
+          <p className="text-sm text-muted-foreground">Comparing your transcript...</p>
         </div>
       )}
     </div>

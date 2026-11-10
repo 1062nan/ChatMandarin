@@ -78,20 +78,21 @@ export async function getLearningPath(userId: string, hskLevel: number): Promise
 /**
  * 推荐逻辑
  */
-function generateRecommendation(
+export function generateRecommendation(
   units: LearningUnit[],
   progress: Map<string, UserUnitProgress>
 ): Recommendation | null {
   if (units.length === 0) return null
 
   // 找到第一个未完成/未掌握的单元
-  for (const unit of units) {
+  for (const [index, unit] of units.entries()) {
     const p = progress.get(unit.id)
+    const nextUnit = units[index + 1]
 
     // 单元未解锁
     if (!p || p.status === 'locked') {
       // 检查前置条件
-      const prevUnit = units.find(u => u.sort_order === unit.sort_order - 1)
+      const prevUnit = units[index - 1]
       if (prevUnit) {
         const prevProgress = progress.get(prevUnit.id)
         if (!prevProgress || prevProgress.best_score < unit.unlock_score) {
@@ -115,28 +116,26 @@ function generateRecommendation(
       }
     }
 
-    // 单元进行中
-    if (p.status === 'available' || p.status === 'in_progress') {
-      if (p.best_score < unit.unlock_score) {
-        // 分数不够 → 继续练习
-        return {
-          type: 'practice_more',
-          unit_id: unit.id,
-          reason: `在 "${unit.title}" 中继续练习。当前最高分：${p.best_score}，需要 ${unit.unlock_score} 分解锁下一关。`,
-          suggested_scenarios: [],
-          suggested_shadowing: 3
-        }
+    // The next unit owns its entry threshold. The current unit's unlock_score
+    // describes the previous unit and can be zero for the first unit.
+    const targetScore = nextUnit?.unlock_score ?? 65
+    if (p.best_score < targetScore) {
+      return {
+        type: 'practice_more',
+        unit_id: unit.id,
+        reason: `在 "${unit.title}" 中继续练习。当前最高分：${p.best_score}，需要 ${targetScore} 分${nextUnit ? '解锁下一关' : '完成本单元'}。`,
+        suggested_scenarios: [],
+        suggested_shadowing: 3
       }
     }
 
-    // 单元已完成但未掌握
-    if (p.status === 'completed' && p.best_score >= unit.unlock_score) {
-      const nextUnit = units.find(u => u.sort_order === unit.sort_order + 1)
-      if (nextUnit) {
+    if (nextUnit) {
+      const nextProgress = progress.get(nextUnit.id)
+      if (!nextProgress || nextProgress.status === 'locked' || nextProgress.status === 'available') {
         return {
           type: 'try_harder',
           unit_id: nextUnit.id,
-          reason: `恭喜完成 "${unit.title}"！可以挑战 "${nextUnit.title}" 了。`,
+          reason: `恭喜完成 "${unit.title}" 的解锁目标！可以挑战 "${nextUnit.title}" 了。`,
           suggested_scenarios: [],
           suggested_shadowing: 0
         }

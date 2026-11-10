@@ -10,18 +10,14 @@ import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils/cn'
 import { MicPermissionBanner } from '@/components/audio/mic-permission-banner'
 import type { MistakeEntry } from '@/lib/db/types'
+import { meanMeasuredScores, type TranscriptScores } from '@/lib/ai/conversation-feedback'
 
 interface Message {
   role: 'user' | 'ai'
   text: string
   audio?: string // base64
   errors?: MistakeEntry[]
-  scores?: {
-    pronunciation: number
-    grammar: number
-    word_choice: number
-    fluency: number
-  }
+  scores?: TranscriptScores
 }
 
 interface ConversationClientProps {
@@ -238,6 +234,8 @@ export function ConversationClient({
 
       const data = await res.json()
 
+      if (data.warning) toast.info(data.warning)
+
       // 添加用户消息
       setMessages(prev => [...prev, {
         role: 'user',
@@ -353,16 +351,9 @@ export function ConversationClient({
     }
   }, [audioRecorder])
 
-  const accuracyScore = messages.length > 1
-    ? Math.round(
-        messages
-          .filter(m => m.scores)
-          .reduce((sum, m) => {
-            const s = m.scores!
-            return sum + (s.pronunciation + s.grammar + s.word_choice + s.fluency) / 4
-          }, 0) / Math.max(1, messages.filter(m => m.scores).length)
-      )
-    : 0
+  const accuracyScore = meanMeasuredScores(messages.flatMap(message =>
+    message.scores ? [message.scores.grammar, message.scores.word_choice] : []
+  ))
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-200px)] max-w-3xl flex-col">
@@ -374,14 +365,14 @@ export function ConversationClient({
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{scenarioName}</h1>
           <p className="text-sm text-muted-foreground">
-            HSK {hskLevel} · {turnIndex} turns · {accuracyScore > 0 ? `${accuracyScore}% avg` : '—'}
+            HSK {hskLevel} · {turnIndex} turns · {accuracyScore !== null ? `${accuracyScore}% text feedback` : 'Not scored'}
           </p>
         </div>
         <Button
           variant="ghost"
           size="sm"
           onClick={handleEndConversation}
-          disabled={isEnding}
+          disabled={isEnding || state === 'processing'}
         >
           {isEnding ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
           {isEnding ? 'Saving...' : 'End'}
@@ -401,7 +392,7 @@ export function ConversationClient({
               <div>
                 <p className="font-semibold">Conversation completed!</p>
                 <p className="text-sm text-muted-foreground">
-                  You completed {turnIndex} turns with {accuracyScore}% average accuracy.
+                  You completed {turnIndex} turns. {accuracyScore !== null ? `Transcript feedback: ${accuracyScore}/100.` : 'No score available.'}
                 </p>
               </div>
               <Button
@@ -568,17 +559,11 @@ function FeedbackCard({
   scores: NonNullable<Message['scores']>
   errors: MistakeEntry[]
 }) {
-  const avg = Math.round(
-    (scores.pronunciation + scores.grammar + scores.word_choice + scores.fluency) / 4
-  )
-
-  const scoreColor = avg >= 85 ? 'text-jade' : avg >= 70 ? 'text-gold' : 'text-vermilion'
-
+  const avg = meanMeasuredScores([scores.grammar, scores.word_choice])
+  const scoreColor = avg === null ? 'text-muted-foreground' : avg >= 85 ? 'text-jade' : avg >= 70 ? 'text-gold' : 'text-vermilion'
   const dimensions = [
-    { label: 'Pronunciation', value: scores.pronunciation, cn: '发音' },
-    { label: 'Grammar', value: scores.grammar, cn: '语法' },
-    { label: 'Word Choice', value: scores.word_choice, cn: '用词' },
-    { label: 'Fluency', value: scores.fluency, cn: '流畅' }
+    { label: 'Grammar', value: scores.grammar },
+    { label: 'Word Choice', value: scores.word_choice },
   ]
 
   return (
@@ -586,28 +571,32 @@ function FeedbackCard({
       <CardContent className="p-3">
         {/* 分数行 */}
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-xs font-medium text-muted-foreground">This turn</span>
-          <span className={cn('text-lg font-bold', scoreColor)}>{avg}<span className="text-xs">/100</span></span>
+          <span className="text-xs font-medium text-muted-foreground">Transcript feedback</span>
+          <span className={cn('text-lg font-bold', scoreColor)}>{avg ?? 'Not scored'}{avg !== null && <span className="text-xs">/100</span>}</span>
         </div>
 
         {/* 4 维度条 */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {dimensions.map((dim) => (
             <div key={dim.label} className="text-center">
               <div className="mx-auto mb-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className={cn(
                     'h-full rounded-full transition-all',
-                    dim.value >= 85 ? 'bg-jade' : dim.value >= 70 ? 'bg-gold' : 'bg-vermilion'
+                    dim.value === null ? 'bg-muted' : dim.value >= 85 ? 'bg-jade' : dim.value >= 70 ? 'bg-gold' : 'bg-vermilion'
                   )}
-                  style={{ width: `${dim.value}%` }}
+                  style={{ width: `${dim.value ?? 0}%` }}
                 />
               </div>
               <span className="text-[10px] text-muted-foreground">{dim.label}</span>
-              <span className="block text-xs font-semibold">{dim.value}</span>
+              <span className="block text-xs font-semibold">{dim.value ?? 'Not scored'}</span>
             </div>
           ))}
         </div>
+
+        <p className="mt-2 text-xs text-muted-foreground">
+          Based on recognized text. Pronunciation, tone, and spoken fluency are not assessed.
+        </p>
 
         {/* 错误列表 */}
         {errors.length > 0 && (
@@ -637,10 +626,10 @@ function FeedbackCard({
         )}
 
         {/* 完美分数 */}
-        {errors.length === 0 && avg >= 90 && (
+        {errors.length === 0 && avg !== null && avg >= 90 && (
           <div className="mt-2 flex items-center gap-1 text-xs text-jade">
             <Sparkles className="h-3 w-3" />
-            Perfect! 没有错误！
+            No text corrections suggested.
           </div>
         )}
       </CardContent>

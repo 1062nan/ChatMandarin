@@ -16,14 +16,14 @@ interface HSKKResult {
   test_id: string
   transcripts: { read: string; qa: string; picture: string }
   scores: {
-    pronunciation: number
-    fluency: number
+    pronunciation: number | null
+    fluency: number | null
     grammar: number
     vocabulary: number
     content: number
   }
   total_score: number
-  predicted_pass: boolean
+  predicted_pass: null
   major_issues: Array<{
     dimension: string
     issue: string
@@ -339,12 +339,12 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
         <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-vermilion" />
         <h2 className="mb-2 text-xl font-bold">Scoring your test...</h2>
         <p className="text-muted-foreground">
-          AI is analyzing your pronunciation, fluency, grammar, vocabulary, and content.
+          AI is reviewing the grammar, vocabulary and content of your transcript.
           This takes about 20-30 seconds.
         </p>
         <div className="mt-8 space-y-2 text-left text-sm text-muted-foreground">
           <p>✓ Transcribing speech...</p>
-          <p>✓ Analyzing pronunciation...</p>
+          <p>✓ Reviewing transcript content...</p>
           <p>✓ Evaluating grammar...</p>
           <p>✓ Scoring content...</p>
         </div>
@@ -369,7 +369,7 @@ function LevelSelect({ tests, onSelect }: { tests: HSKKTestContent[]; onSelect: 
       <div className="text-center">
         <h1 className="text-3xl font-bold tracking-tight">HSKK Mock Test</h1>
         <p className="mt-2 text-muted-foreground">
-          Transcript-based HSKK practice with feedback across 5 learning dimensions.
+          Transcript-based HSKK practice with grammar, vocabulary, and content feedback.
         </p>
       </div>
 
@@ -622,8 +622,6 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, i
 
 function ResultView({ result, onReset }: { result: HSKKResult; onReset: () => void }) {
   const dimensions = [
-    { label: 'Speech clarity', value: result.scores.pronunciation, cn: '清晰度' },
-    { label: 'Fluency', value: result.scores.fluency, cn: '流利度' },
     { label: 'Grammar', value: result.scores.grammar, cn: '语法' },
     { label: 'Vocabulary', value: result.scores.vocabulary, cn: '词汇' },
     { label: 'Content', value: result.scores.content, cn: '内容' }
@@ -635,27 +633,22 @@ function ResultView({ result, onReset }: { result: HSKKResult; onReset: () => vo
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       {/* 总分 */}
-      <Card className={cn(
-        'border-2',
-        result.predicted_pass ? 'border-jade/40 bg-jade/5' : 'border-vermilion/40 bg-vermilion/5'
-      )}>
+      <Card className="border-2">
         <CardContent className="p-8 text-center">
-          {result.predicted_pass ? (
-            <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-jade" />
-          ) : null}
           <div className={cn('text-5xl font-bold', scoreColor(result.total_score))}>
             {result.total_score}
             <span className="text-2xl text-muted-foreground">/100</span>
           </div>
           <p className="mt-2 text-lg font-semibold">
-            {result.predicted_pass ? 'Practice estimate: passing range' : 'Practice estimate: keep improving'}
+            Transcript content practice score
           </p>
           <p className="mt-1 text-sm text-muted-foreground">{result.overall_feedback}</p>
+          <p className="mt-2 text-sm text-muted-foreground">Not an official HSKK score or pass prediction. Pronunciation and fluency are not assessed. Speech recognition may make mistakes.</p>
         </CardContent>
       </Card>
 
       {/* 5 维度分数 */}
-      <div className="grid gap-4 sm:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-3">
         {dimensions.map(dim => (
           <Card key={dim.label}>
             <CardContent className="p-4 text-center">

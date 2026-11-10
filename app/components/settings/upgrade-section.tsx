@@ -23,8 +23,10 @@ const plans = [
     period: 'forever',
     features: [
       '5 min AI conversation / day',
-      '1 scenario',
-      'Basic feedback',
+      'HSK-level conversation scenarios',
+      'Transcript-based feedback',
+      '5 shadowing attempts / day',
+      '20 active mistake cards',
       '1 HSKK mock test / day'
     ],
     cta: 'Current plan',
@@ -39,7 +41,7 @@ const plans = [
     features: [
       'Unlimited AI conversation',
       'All scenarios',
-      'Real-time 4-dimension feedback',
+      'Transcript-based grammar and vocabulary feedback',
       'HSKK mock tests (3/month)',
       'Mistake journal with SRS',
       'Unlimited shadowing and dubbing practice'

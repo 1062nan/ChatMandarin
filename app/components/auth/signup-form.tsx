@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -138,7 +139,10 @@ export function SignupForm() {
       </Button>
 
       <p className="text-center text-xs text-muted-foreground">
-        By signing up, you agree to our Terms of Service and Privacy Policy.
+        By signing up, you agree to our{' '}
+        <Link href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">Terms of Service</Link>
+        {' '}and{' '}
+        <Link href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">Privacy Policy</Link>.
       </p>
     </form>
   )

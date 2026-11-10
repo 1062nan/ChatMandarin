@@ -1,6 +1,7 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getLearningPath } from '@/lib/db/learning-path'
 import { JourneyView } from './journey-view'
+import { isReviewableMistake } from '@/lib/ai/conversation-feedback'
 
 export const metadata = { title: 'Dashboard' }
 
@@ -34,17 +35,21 @@ export default async function DashboardPage() {
   // 最近对话
   const { data: recentConvs } = await supabase
     .from('conversations')
-    .select('scenario, hsk_level, started_at, total_turns, avg_pronunciation')
+    .select('scenario, hsk_level, started_at, total_turns')
+    .eq('user_id', profile.id)
+    .gt('total_turns', 0)
     .order('started_at', { ascending: false })
     .limit(3)
 
   // 错题数
-  const { count: pendingMistakes } = await supabase
+  const { data: pendingMistakeRows } = await supabase
     .from('mistakes')
-    .select('*', { count: 'exact', head: true })
+    .select('correct, explanation')
     .eq('user_id', profile.id)
     .lte('next_review_at', new Date().toISOString())
     .eq('mastered', false)
+
+  const pendingMistakes = (pendingMistakeRows || []).filter(isReviewableMistake).length
 
   return (
     <div className="space-y-8">
@@ -85,7 +90,6 @@ export default async function DashboardPage() {
                   <p className="font-medium capitalize">{conv.scenario}</p>
                   <p className="text-xs text-muted-foreground">
                     HSK {conv.hsk_level} · {conv.total_turns} 轮
-                    {conv.avg_pronunciation ? ` · ${Math.round(conv.avg_pronunciation)}%` : ''}
                   </p>
                 </div>
                 <span className="text-xs text-muted-foreground">

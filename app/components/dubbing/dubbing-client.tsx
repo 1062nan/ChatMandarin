@@ -258,18 +258,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
                   {score.total_score}<span className="text-lg text-muted-foreground">/100</span>
                 </div>
               </div>
-              <div className="mb-4 grid grid-cols-3 gap-3">
-                {[
-                  { label: 'Pronunciation', value: score.pronunciation_score },
-                  { label: 'Emotion', value: score.emotion_score },
-                  { label: 'Fluency', value: score.fluency_score }
-                ].map(s => (
-                  <div key={s.label} className="text-center">
-                    <div className={cn('text-lg font-bold', s.value >= 85 ? 'text-jade' : s.value >= 70 ? 'text-gold' : 'text-vermilion')}>{s.value}</div>
-                    <div className="text-xs text-muted-foreground">{s.label}</div>
-                  </div>
-                ))}
-              </div>
+              <p className="mb-4 text-center text-sm text-muted-foreground">Transcript match only. Pronunciation, tone, emotion, rhythm and fluency are not assessed. Speech recognition may make mistakes.</p>
               <div className="flex flex-wrap justify-center gap-1 border-t pt-3">
                 {score.char_comparison?.map((c: any, i: number) => (
                   <span key={i} className={cn('cn-font text-lg', c.correct ? 'text-jade' : c.userSaid === '_' ? 'text-muted-foreground/30' : 'text-vermilion line-through')}>{c.char}</span>
@@ -331,7 +320,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
             </div>
             <h2 className="mb-2 text-2xl font-bold">Practice Complete!</h2>
             <p className="mb-4 text-muted-foreground">
-              Average practice score: <span className="font-bold text-vermilion">{avgScore}/100</span>
+              Average transcript match: <span className="font-bold text-vermilion">{avgScore}/100</span>
             </p>
             <p className="mb-6 text-sm text-muted-foreground">
               Ready for the full performance? Record the entire scene in one take.
@@ -400,16 +389,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
 
   // ============ 表演结果 ============
   if (phase === 'perform-result' && performScore) {
-    const s = performScore.scores
-    const dims = [
-      { label: 'Pronunciation', value: s.pronunciation, cn: '发音', weight: '30%' },
-      { label: 'Tone', value: s.tone, cn: '声调', weight: '25%' },
-      { label: 'Emotion', value: s.emotion, cn: '情感', weight: '20%' },
-      { label: 'Rhythm', value: s.rhythm, cn: '节奏', weight: '15%' },
-      { label: 'Fluency', value: s.fluency, cn: '流畅', weight: '10%' }
-    ]
     const color = (v: number) => v >= 85 ? 'text-jade' : v >= 70 ? 'text-gold' : 'text-vermilion'
-    const barColor = (v: number) => v >= 85 ? 'bg-jade' : v >= 70 ? 'bg-gold' : 'bg-vermilion'
 
     return (
       <div className="mx-auto max-w-2xl space-y-6">
@@ -423,22 +403,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
           </CardContent>
         </Card>
 
-        {/* 5 dimensions */}
-        <div className="grid gap-3 sm:grid-cols-5">
-          {dims.map(d => (
-            <Card key={d.label}>
-              <CardContent className="p-3 text-center">
-                <div className="mx-auto mb-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className={cn('h-full rounded-full', barColor(d.value))} style={{ width: `${d.value}%` }} />
-                </div>
-                <div className={cn('text-xl font-bold', color(d.value))}>{d.value}</div>
-                <div className="text-xs text-muted-foreground">{d.label}</div>
-                <div className="cn-font text-xs text-muted-foreground">{d.cn}</div>
-                <div className="text-xs text-muted-foreground">{d.weight}</div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <p className="text-center text-sm text-muted-foreground">Transcript match only. Pronunciation, tone, emotion, rhythm and fluency are not assessed. Speech recognition may make mistakes.</p>
 
         {/* Transcript */}
         <Card>
@@ -446,7 +411,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
             <p className="mb-1 text-xs font-medium text-muted-foreground">Your transcript</p>
             <p className="cn-font text-sm">{performScore.transcript}</p>
             <p className="mt-2 text-xs text-muted-foreground">
-              {performScore.chars_correct}/{performScore.chars_total} characters correct
+              {performScore.chars_correct}/{performScore.chars_total} target characters matched in the transcript
             </p>
           </CardContent>
         </Card>

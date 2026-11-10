@@ -1,15 +1,14 @@
 /**
  * POST /api/dubbing/perform
- * 完整配音表演：用户录制完整片段 → ASR 全文 → 逐句对比 → 5 维度评分
+ * 完整配音表演：用户录制完整片段 → ASR 全文 → 逐句对比 → 转录文本匹配
  *
  * Body (multipart): audio (WAV), clip_id
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
-import { getHSKKScore } from '@/lib/ai/deepseek'
 import { getSubscriptionContext } from '@/lib/subscription/tier'
-import { clampScore } from '@/lib/practice/scoring'
+import { comparePracticeTexts, normalizePracticeText } from '@/lib/practice/scoring'
 import { validateAudioFile } from '@/lib/practice/request'
 
 export const runtime = 'nodejs'
@@ -53,13 +52,14 @@ export async function POST(request: NextRequest) {
     }
 
     // 获取片段数据
-    const { data: clip } = await supabase
+    const { data: clip, error: clipError } = await supabase
       .from('dubbing_clips')
       .select('*')
       .eq('id', clipId)
       .eq('is_active', true)
       .maybeSingle()
 
+    if (clipError) throw clipError
     if (!clip) return NextResponse.json({ error: 'Clip not found' }, { status: 404 })
 
     const lines = Array.isArray(clip.lines) ? clip.lines as Array<Record<string, unknown>> : []
@@ -71,59 +71,15 @@ export async function POST(request: NextRequest) {
     const audioBuffer = await audio.file.arrayBuffer()
     const asrResult = await recognizeSpeech(audioBuffer, audio.format, 16000)
 
-    // 全文 vs 原文逐字对比
+    if (!normalizePracticeText(asrResult.text)) {
+      return NextResponse.json({ error: 'Could not understand audio' }, { status: 422 })
+    }
     const allOriginal = lines.map((line) => line.text as string).join('')
-    const allOriginalClean = allOriginal.replace(/[\s，。！？、,.!?]/g, '')
-    const userClean = asrResult.text.replace(/[\s，。！？、,.!?]/g, '')
-
-    let correct = 0
-    const origChars = [...allOriginalClean]
-    const userChars = [...userClean]
-    for (let i = 0; i < origChars.length; i++) {
-      if (origChars[i] === userChars[i]) correct++
+    if (!normalizePracticeText(allOriginal)) {
+      return NextResponse.json({ error: 'Clip content is invalid' }, { status: 422 })
     }
-
-    const pronunciation = Math.round((correct / Math.max(origChars.length, 1)) * 100)
-
-    // 音频时长 vs 片段标准时长（节奏适当性）
-    const audioDuration = audioBuffer.byteLength / (16000 * 2) // WAV 16kHz 16bit mono
-    const clipDuration = clip.duration_seconds
-    const durationRatio = audioDuration / clipDuration
-    let rhythmScore: number
-    if (durationRatio >= 0.8 && durationRatio <= 1.2) {
-      rhythmScore = 90
-    } else if (durationRatio >= 0.6 && durationRatio <= 1.5) {
-      rhythmScore = 70
-    } else {
-      rhythmScore = 50
-    }
-
-    // 流畅度（完成度）
-    const completionRate = Math.min(1, userChars.length / origChars.length)
-    const fluency = Math.round(completionRate * 100)
-
-    // 用 DeepSeek 评估情感匹配
-    let emotionScore = 75
-    try {
-      const emotionPrompt = `Score a movie dubbing performance.
-
-Clip: "${clip.title}"
-Lines (original):
-${lines.map((l, i) => `${i + 1}. ${l.speaker}: "${l.text}" (${l.emotion})`).join('\n')}
-
-Student's full transcript: "${asrResult.text}"
-
-Score pronunciation (0-100), emotion match (0-100), and give feedback.
-Return JSON: { "scores": { "pronunciation": N, "word_choice": N }, "errors": [] }`
-
-      const aiResult = await getHSKKScore(emotionPrompt)
-      emotionScore = clampScore(aiResult.scores?.content, 75)
-    } catch {}
-
-    const toneScore = Math.max(60, pronunciation - 10) // V1 简化
-    const total = Math.round(
-      pronunciation * 0.3 + toneScore * 0.25 + emotionScore * 0.2 + rhythmScore * 0.15 + fluency * 0.1
-    )
+    const comparison = comparePracticeTexts(asrResult.text, allOriginal)
+    const total = comparison.accuracyScore
 
     // 保存到数据库
     const { data: performance, error: saveError } = await supabase
@@ -132,11 +88,11 @@ Return JSON: { "scores": { "pronunciation": N, "word_choice": N }, "errors": [] 
         user_id: profile.id,
         clip_id: clipId,
         total_score: total,
-        pronunciation_score: pronunciation,
-        tone_score: toneScore,
-        emotion_score: emotionScore,
-        rhythm_score: rhythmScore,
-        fluency_score: fluency,
+        pronunciation_score: null,
+        tone_score: null,
+        emotion_score: null,
+        rhythm_score: null,
+        fluency_score: null,
         transcript: asrResult.text,
         mode: 'perform'
       })
@@ -148,17 +104,19 @@ Return JSON: { "scores": { "pronunciation": N, "word_choice": N }, "errors": [] 
       performance_id: performance?.id,
       transcript: asrResult.text,
       scores: {
-        pronunciation,
-        tone: toneScore,
-        emotion: emotionScore,
-        rhythm: rhythmScore,
-        fluency
+        pronunciation: null,
+        tone: null,
+        emotion: null,
+        rhythm: null,
+        fluency: null
       },
       total_score: total,
+      transcript_match_score: total,
+      assessment_basis: 'transcript_match',
       clip_title: clip.title,
       line_count: lines.length,
-      chars_correct: correct,
-      chars_total: origChars.length
+      chars_correct: comparison.charByChar.filter((entry) => entry.correct).length,
+      chars_total: comparison.charByChar.length
     })
   } catch (error) {
     console.error('Dubbing perform failed:', error)
