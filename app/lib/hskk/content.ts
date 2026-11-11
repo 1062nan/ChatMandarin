@@ -1,7 +1,7 @@
 /**
- * HSKK 模考内容库
- * 每级 3 套完整模考（朗读 + 问答 + 看图说话）
- * 内容参考官方 HSKK 考试大纲
+ * 综合口语练习内容库：朗读、问答和看图描述。
+ * Beginner / Intermediate / Advanced 是产品内部练习难度。
+ * 不复现官方 HSKK 的题型数量、时间或完整考试结构，不是官方模拟卷。
  */
 
 export type HSKKLevel = 'beginner' | 'intermediate' | 'advanced'

@@ -225,7 +225,8 @@ export async function generateHSKKTest(level: 'beginner' | 'intermediate' | 'adv
   const cfg = levelMap[level]
   const syllabusContext = getSyllabusPromptContext(cfg.hsk)
 
-  const prompt = `Generate an HSKK ${level} mock test. Return JSON only.
+  const prompt = `Generate a ${level} supplementary Mandarin speaking practice set. Return JSON only.
+This is not a full HSKK mock exam. The three activities below are an internal practice format, not an official test blueprint.
 
 ${syllabusContext}
 

@@ -10,13 +10,13 @@ export const metadata: Metadata = {
     default: 'ChatMandarin — AI Chinese tutor for HSK learners',
     template: '%s · ChatMandarin'
   },
-  description: 'The AI conversation tutor built specifically for HSK learners. Speak Mandarin from day 1 — HSK-graded conversation, HSKK mock test, real-time feedback.',
+  description: 'The AI conversation tutor built specifically for HSK learners. Speak Mandarin from day 1 — HSK-graded conversation, speaking practice, AI practice feedback.',
   keywords: ['learn Chinese', 'HSK', 'Mandarin', 'AI tutor', 'Chinese speaking practice', 'HSKK'],
   authors: [{ name: 'ChatMandarin' }],
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://chatmandarin.cc'),
   openGraph: {
     title: 'ChatMandarin — AI Chinese tutor for HSK learners',
-    description: 'Speak Mandarin from day 1. HSK-graded AI conversation, HSKK mock test, real-time feedback.',
+    description: 'Speak Mandarin from day 1. HSK-graded AI conversation, speaking practice, AI practice feedback.',
     type: 'website',
     locale: 'en_US',
     url: '/',
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary_large_image',
     title: 'ChatMandarin — AI Chinese tutor for HSK learners',
-    description: 'Speak Mandarin from day 1. HSK-graded AI conversation, HSKK mock test.',
+    description: 'Speak Mandarin from day 1. HSK-graded AI conversation, speaking practice.',
     images: ['/og-image.svg']
   },
   robots: {

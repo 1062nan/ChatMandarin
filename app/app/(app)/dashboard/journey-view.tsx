@@ -82,8 +82,8 @@ export function JourneyView({ units, progress, displayMode, profileId }: Journey
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {isExam
-              ? '严格按 HSK 官方大纲分级训练，显示等级 / 语法点 / 题型'
-              : '按生活故事线推进，等级与大纲在后台自动对齐'}
+              ? '参考传统 HSK 1–6 等级组织练习；不是完整官方考试大纲'
+              : '按生活故事线推进，等级标签仅用于练习难度参考'}
           </p>
         </div>
         <Button

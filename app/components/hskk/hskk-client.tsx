@@ -219,9 +219,9 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
 
   if (phase === 'submit-error') {
     return <div className="mx-auto max-w-2xl space-y-4 py-12 text-center">
-      <h2 className="text-xl font-bold">Could not score this test</h2>
+      <h2 className="text-xl font-bold">Could not score this practice</h2>
       <p role="alert">{error}</p>
-      <p className="text-sm text-muted-foreground">Your recordings are still available in this page. Retry without recording again, or start a new test.</p>
+      <p className="text-sm text-muted-foreground">Your recordings are still available in this page. Retry without recording again, or start a new practice.</p>
       <div className="flex justify-center gap-3">
         <Button onClick={() => void handleSubmit()}>Retry submission</Button>
         <Button variant="outline" onClick={handleReset}>Start over</Button>
@@ -362,7 +362,7 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
     return (
       <div className="mx-auto max-w-md py-20 text-center">
         <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-vermilion" />
-        <h2 className="mb-2 text-xl font-bold">Scoring your test...</h2>
+        <h2 className="mb-2 text-xl font-bold">Scoring your practice...</h2>
         <p className="text-muted-foreground">
           AI is reviewing the grammar, vocabulary and content of your transcript.
           This takes about 20-30 seconds.
@@ -383,20 +383,27 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
 // ============ 级别选择 ============
 
 function LevelSelect({ tests, onSelect }: { tests: HSKKTestContent[]; onSelect: (level: HSKKLevel) => void }) {
-  const levels: { id: HSKKLevel; name: string; description: string; hskRange: string }[] = [
-    { id: 'beginner', name: 'Beginner', description: 'Basic daily conversation', hskRange: 'HSK 1-2' },
-    { id: 'intermediate', name: 'Intermediate', description: 'Express opinions on familiar topics', hskRange: 'HSK 3-4' },
-    { id: 'advanced', name: 'Advanced', description: 'Discuss complex topics fluently', hskRange: 'HSK 5-6' }
+  const levels: { id: HSKKLevel; name: string; description: string; difficultyLabel: string }[] = [
+    { id: 'beginner', name: 'Beginner', description: 'Basic daily conversation', difficultyLabel: 'Easier prompts' },
+    { id: 'intermediate', name: 'Intermediate', description: 'Express opinions on familiar topics', difficultyLabel: 'More complex prompts' },
+    { id: 'advanced', name: 'Advanced', description: 'Discuss complex topics fluently', difficultyLabel: 'Challenging prompts' }
   ]
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <div className="text-center">
-        <h1 className="text-3xl font-bold tracking-tight">HSKK Mock Test</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Speaking Practice</h1>
         <p className="mt-2 text-muted-foreground">
-          Transcript-based HSKK practice with grammar, vocabulary, and content feedback.
+          Build speaking skills relevant to HSKK with feedback on recognized grammar, vocabulary, and content.
         </p>
       </div>
+
+      <p className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+        This is supplementary speaking practice, not a full HSKK mock exam. Its activities,
+        question counts, and timing do not reproduce an official exam. These difficulty labels
+        are internal practice levels, not an official level placement or pass prediction.
+        Check the current format for your exam level and date with your test center.
+      </p>
 
       <div className="grid gap-4">
         {levels.map(level => {
@@ -412,11 +419,11 @@ function LevelSelect({ tests, onSelect }: { tests: HSKKTestContent[]; onSelect: 
                   <div className="mb-1 flex items-center gap-2">
                     <h3 className="text-xl font-bold">{level.name}</h3>
                     <span className="rounded-full bg-vermilion/10 px-2 py-0.5 text-xs font-medium text-vermilion">
-                      {level.hskRange}
+                      {level.difficultyLabel}
                     </span>
                   </div>
                   <p className="text-muted-foreground">{level.description}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{testCount} test variants available</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{testCount} practice sets available</p>
                 </div>
                 <ChevronRight className="h-6 w-6 text-muted-foreground" />
               </CardContent>
@@ -428,7 +435,7 @@ function LevelSelect({ tests, onSelect }: { tests: HSKKTestContent[]; onSelect: 
       <Card className="border-dashed">
         <CardContent className="p-4 text-center text-sm text-muted-foreground">
           <Clock className="mx-auto mb-2 h-5 w-5" />
-          Each test takes about 15 minutes (3 sections: read aloud, Q&A, picture description)
+          Each practice has 3 activities: read aloud, answer questions, and describe a picture.
         </CardContent>
       </Card>
     </div>
@@ -640,7 +647,7 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, o
               : instruction}
         </p>
         <RecordingUpload id={uploadId} onUpload={onUpload} disabled={isRecording || !canRecord}
-          help="WAV · 16 kHz · mono · 16-bit PCM · 0.3–120 seconds per answer. All recordings are sent for recognition and use your test allowance after the final section." />
+          help="WAV · 16 kHz · mono · 16-bit PCM · 0.3–120 seconds per answer. All recordings are sent for recognition and use your speaking-practice allowance after the final section." />
       </div>
 
       {/* 隐藏的 audio 元素 */}
@@ -768,7 +775,7 @@ function ResultView({ result, onReset }: { result: HSKKResult; onReset: () => vo
       <div className="flex gap-3">
         <Button variant="primary" size="lg" className="flex-1" onClick={onReset}>
           <RotateCcw className="h-4 w-4" />
-          Take Another Test
+          Try Another Practice
         </Button>
       </div>
     </div>

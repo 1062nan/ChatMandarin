@@ -17,7 +17,7 @@ export default function PrivacyPage() {
           <ul className="list-disc space-y-1 pl-6">
             <li><strong>Account information:</strong> Email address, display name, authentication tokens (managed by Supabase Auth).</li>
             <li><strong>Learning data:</strong> Your HSK level, conversation transcripts, scores, mistakes, and progress data.</li>
-            <li><strong>Audio data:</strong> Voice recordings are processed in real-time for speech recognition. We do <strong>NOT</strong> store your voice recordings unless you explicitly submit an HSKK mock test.</li>
+            <li><strong>Audio data:</strong> Voice recordings are processed in real-time for speech recognition. We do <strong>NOT</strong> store your voice recordings unless you explicitly submit an speaking-practice session.</li>
             <li><strong>Usage data:</strong> Browser type, device information, approximate location (country-level), and interaction logs.</li>
           </ul>
 

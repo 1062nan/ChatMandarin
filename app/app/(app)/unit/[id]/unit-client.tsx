@@ -132,8 +132,9 @@ export function UnitClient({
           <CardContent className="p-4">
             <div className="mb-3 flex items-center gap-2">
               <Target className="h-4 w-4 text-vermilion" />
-              <span className="text-sm font-semibold">本单元 HSK {unit.hsk_level} 训练目标</span>
+              <span className="text-sm font-semibold">本单元练习目标 · 传统 HSK {unit.hsk_level} 难度参考</span>
             </div>
+            <p className="mb-3 text-xs text-muted-foreground">以下为内部教学参考，尚未核验完整官方大纲覆盖；请按考试日期和考点确认备考要求。</p>
             <div className="grid gap-4 sm:grid-cols-2">
               {unit.grammar_points && unit.grammar_points.length > 0 && (
                 <div>
@@ -152,7 +153,7 @@ export function UnitClient({
                 <div>
                   <p className="mb-1 text-xs font-medium text-muted-foreground">
                     <Target className="mr-1 inline h-3 w-3" />
-                    考试题型
+                    相关技能
                   </p>
                   <ul className="space-y-0.5">
                     {unit.exam_skills.map((s, i) => (

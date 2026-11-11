@@ -13,7 +13,7 @@ const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/conversation/restaurant', label: 'Practice', icon: Mic },
   { href: '/shadowing', label: 'Shadowing', icon: Repeat },
-  { href: '/hskk', label: 'HSKK Mock', icon: ClipboardList },
+  { href: '/hskk', label: 'Speaking Practice', icon: ClipboardList },
   { href: '/dubbing', label: 'Dubbing', icon: Film },
   { href: '/mistakes', label: 'Mistakes', icon: BookOpen },
   { href: '/settings', label: 'Settings', icon: Settings }

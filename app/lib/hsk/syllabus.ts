@@ -1,23 +1,22 @@
 /**
- * HSK 官方大纲对齐表（HSK 1-6，旧版/经典版 150-5000 词）
+ * 传统 HSK 1–6 分级练习参考（150–5000 词框架）
  *
- * 数据源：汉办《新汉语水平考试大纲》HSK 1-6 级
- * - 每级核心语法点（官方大纲附录语法）
- * - 每级核心话题簇（官方大纲场景话题）
- * - 每级考试题型与技能要求
+ * 产品内部教学整理，尚未完成逐项官方大纲核验。
+ * 不代表完整词表、当前考试版本覆盖或官方备考认证。
+ * 题型与等级映射需按考试日期及考点确认。
  *
  * 用途：
  * 1. content-generator 生成内容时注入"必须覆盖的语法点 + 话题"
  * 2. learning_units 的 grammar_points / vocab_topics / exam_skills 字段
- * 3. 后端严格按 HSK 大纲，前端可显示故事线名称（混合模式）
+ * 3. 后端参考传统等级组织练习，前端可显示故事线名称（混合模式）
  */
 
 export interface HSKSyllabus {
   level: number
   name: string
   vocabularyCount: number
-  grammarPoints: string[]      // 官方大纲语法点
-  topicClusters: string[]      // 官方大纲话题
+  grammarPoints: string[]      // 内部练习语法参考
+  topicClusters: string[]      // 内部练习话题参考
   examFormat: {
     listening: string
     reading: string
@@ -28,8 +27,7 @@ export interface HSKSyllabus {
 }
 
 /**
- * HSK 1-6 官方大纲要点
- * （来源：孔子学院总部/汉办 HSK 大纲，2010 版——海外学习者最广泛使用）
+ * 传统 HSK 1–6 框架下的内部练习要点（非已核验官方清单）
  */
 export const HSK_SYLLABUS: HSKSyllabus[] = [
   {
@@ -473,7 +471,9 @@ export function getSyllabusPromptContext(
   const sampleVocab = syllabus.sampleWords.slice(0, 20)
 
   return `
-=== HSK ${level} SYLLABUS ALIGNMENT ===
+=== TRADITIONAL HSK ${level} PRACTICE GUIDANCE ===
+
+This is an internal teaching outline, not a complete or verified official syllabus. Do not claim current exam alignment or guaranteed coverage.
 
 Target vocabulary count: ${syllabus.vocabularyCount} words
 
@@ -486,7 +486,7 @@ ${relevantTopics.slice(0, 5).map(t => `- ${t}`).join('\n')}
 Sample vocabulary at THIS level (must include where natural):
 ${sampleVocab.join('、')}
 
-What students at HSK ${level} can do:
+Practice goals for this internal level outline:
 ${syllabus.examSkills.map(s => `- ${s}`).join('\n')}
 
 Content generation rules:
