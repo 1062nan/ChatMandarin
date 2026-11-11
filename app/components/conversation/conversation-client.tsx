@@ -300,6 +300,7 @@ export function ConversationClient({
       }
       audioRecorder.cancel()
       router.push('/dashboard')
+      router.refresh()
     } catch (endError) {
       console.error('[Conversation] end failed:', endError)
       toast.error('Could not save your progress. Please try again.')

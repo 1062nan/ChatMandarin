@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
-const mocks = vi.hoisted(() => ({ client: vi.fn(), save: vi.fn(), history: vi.fn(), asr: vi.fn(), response: vi.fn(), mistakes: vi.fn(), prompt: vi.fn(), quota: vi.fn() }))
+const mocks = vi.hoisted(() => ({ client: vi.fn(), save: vi.fn(), history: vi.fn(), asr: vi.fn(), response: vi.fn(), mistakes: vi.fn(), prompt: vi.fn(), quota: vi.fn(), session: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: mocks.client }))
-vi.mock('@/lib/db/conversations', () => ({ saveConversationTurn: mocks.save, getConversationTurns: mocks.history }))
+vi.mock('@/lib/db/conversations', () => ({ saveConversationTurn: mocks.save, getConversationTurns: mocks.history, getVerifiedConversation: mocks.session }))
 vi.mock('@/lib/ai/volcengine-asr', () => ({ recognizeSpeech: mocks.asr }))
 vi.mock('@/lib/ai/volcengine-tts', () => ({ synthesizeSpeech: async () => ({ audioBase64: null }) }))
 vi.mock('@/lib/ai/deepseek', () => ({ getConversationResponse: mocks.response }))
@@ -33,7 +33,8 @@ function request() {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.client.mockResolvedValue(client())
-  mocks.save.mockResolvedValue({ id: 'turn' })
+  mocks.save.mockResolvedValue({ id: 'turn', user_text: '你好', ai_text: '你好', errors: [], grammar_score: null, word_choice_score: null })
+  mocks.session.mockResolvedValue({ scenario_id: 'real-scenario', hsk_level: 2, correction_mode: 'friendly', completed_at: null })
   mocks.history.mockResolvedValue([])
   mocks.asr.mockResolvedValue({ text: '你好' })
   mocks.response.mockResolvedValue({ reply: '你好', errors: [], scores: { pronunciation: null, grammar: null, fluency: null, word_choice: null } })
@@ -53,12 +54,21 @@ describe('conversation turn persistence contract', () => {
     expect((await POST(request())).status).toBe(500)
     expect(mocks.mistakes).not.toHaveBeenCalled()
   })
-  it('returns success and warning when only the derived summary failed', async () => {
-    mocks.save.mockResolvedValueOnce({ id: 'turn', statsUpdateFailed: true })
+  it('replays a persisted turn before ASR or quota consumption', async () => {
+    mocks.history.mockResolvedValueOnce([{ turn_index: 0, user_text: '之前', ai_text: '保存的回复', grammar_score: 80, word_choice_score: null }])
     const response = await POST(request())
     expect(response.status).toBe(200)
-    expect((await response.json()).warning).toContain('summary update is pending')
-    expect(mocks.save).toHaveBeenCalledOnce()
+    expect((await response.json()).ai_reply).toBe('保存的回复')
+    expect(mocks.quota).not.toHaveBeenCalled()
+    expect(mocks.asr).not.toHaveBeenCalled()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
+  it('does not duplicate journal entries after a concurrent replay', async () => {
+    mocks.save.mockResolvedValueOnce({ id: 'turn', duplicate: true, ai_text: 'Existing reply', errors: [], grammar_score: 70 })
+    mocks.response.mockResolvedValueOnce({ reply: 'New reply', errors: [{ type: 'grammar', user_said: '你好', correct: '您好' }], scores: {} })
+    const response = await POST(request())
+    expect((await response.json()).ai_reply).toBe('Existing reply')
+    expect(mocks.mistakes).not.toHaveBeenCalled()
   })
   it('does not invite duplicate practice when journal enrichment fails', async () => {
     mocks.response.mockResolvedValueOnce({ reply: '你好', errors: [{ type: 'grammar', user_said: '你好', correct: '您好' }], scores: {} })
@@ -68,7 +78,7 @@ describe('conversation turn persistence contract', () => {
     expect((await response.json()).warning).toContain('mistake journal')
   })
   it('rejects a closed session before consuming quota or saving another turn', async () => {
-    mocks.client.mockResolvedValueOnce(client(true))
+    mocks.session.mockResolvedValueOnce({ completed_at: 'yesterday' })
     expect((await POST(request())).status).toBe(409)
     expect(mocks.quota).not.toHaveBeenCalled()
     expect(mocks.save).not.toHaveBeenCalled()

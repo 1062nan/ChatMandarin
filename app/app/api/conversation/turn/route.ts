@@ -28,7 +28,7 @@ import { synthesizeSpeech } from '@/lib/ai/volcengine-tts'
 import { getConversationResponse } from '@/lib/ai/deepseek'
 import { buildConversationPrompt } from '@/lib/ai/prompts'
 import type { ChatMessage } from '@/lib/ai/deepseek'
-import { saveConversationTurn, getConversationTurns } from '@/lib/db/conversations'
+import { saveConversationTurn, getConversationTurns, getVerifiedConversation, type VerifiedTurn } from '@/lib/db/conversations'
 import { createMistakesFromErrors } from '@/lib/db/mistakes'
 import { analyzeAudio } from '@/lib/audio/analyze'
 import { getSubscriptionContext, consumeConversationSeconds } from '@/lib/subscription/tier'
@@ -76,22 +76,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
-    // 验证 conversation 归属当前用户
-    const { data: conv } = await supabase
-      .from('conversations')
-      .select('user_id, scenario, hsk_level, correction_mode, ended_at')
-      .eq('id', conversationId)
-      .maybeSingle()
-    if (!conv || conv.user_id !== profile.id) {
-      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
-    }
-    if (conv.ended_at) {
-      return NextResponse.json({ error: 'Conversation has already ended' }, { status: 409 })
-    }
-
-    // Scenario and learning controls are immutable properties of the server-side
-    // conversation. Ignore browser-supplied copies that can be tampered with.
-    const scenarioId = conv.scenario
+    // Use protected settings and history, never the client-editable legacy rows.
+    const conv = await getVerifiedConversation(conversationId, profile.id)
+    if (!conv) return NextResponse.json({ error: 'Please start a new conversation.' }, { status: 409 })
+    const history = await getConversationTurns(conversationId, profile.id)
+    const existingTurn = history.find(turn => turn.turn_index === turnIndex)
+    if (existingTurn) return NextResponse.json(turnResponse(existingTurn, null))
+    if (conv.completed_at) return NextResponse.json({ error: 'Conversation has already ended' }, { status: 409 })
+    if (turnIndex !== history.length) return NextResponse.json({ error: 'Unexpected turn index. Please start a new conversation.' }, { status: 409 })
+    const scenarioId = conv.scenario_id
     const hskLevel = conv.hsk_level
     const correctionMode = conv.correction_mode
 
@@ -116,6 +109,7 @@ export async function POST(request: NextRequest) {
       .from('scenarios')
       .select('*')
       .eq('id', scenarioId)
+      .eq('is_active', true)
       .single()
 
     if (!scenario) {
@@ -169,7 +163,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 7. 获取对话历史（最近 5 轮）
-    const history = await getConversationTurns(conversationId)
     const recentHistory = history.slice(-5)
 
     const chatMessages: ChatMessage[] = recentHistory.map((turn) => [
@@ -217,9 +210,10 @@ export async function POST(request: NextRequest) {
     // 10. 保存到数据库
     const latencyMs = Date.now() - startTime
 
-    let statsUpdateFailed = false
+    let savedTurn: VerifiedTurn
     try {
-      const savedTurn = await saveConversationTurn({
+      savedTurn = await saveConversationTurn({
+        userId: profile.id,
         conversationId,
         turnIndex,
         userText,
@@ -227,10 +221,10 @@ export async function POST(request: NextRequest) {
         errors: aiResponse.errors || [],
         scores: aiResponse.scores,
         userAudioDurationMs: audioDurationSeconds * 1000,
-        aiResponseLatencyMs: latencyMs
+        aiResponseLatencyMs: latencyMs,
+        conversationComplete: aiResponse.conversation_complete,
+        encouragement: aiResponse.encouragement
       })
-
-      statsUpdateFailed = savedTurn.statsUpdateFailed === true
 
     } catch (dbError) {
       console.error('Database save failed:', dbError)
@@ -238,9 +232,8 @@ export async function POST(request: NextRequest) {
     }
 
     const warnings: string[] = []
-    if (statsUpdateFailed) warnings.push('Your practice was saved, but the summary update is pending. It will retry when you end this conversation.')
     // Journal enrichment must not turn a durable practice save into a retry.
-    if (aiResponse.errors && aiResponse.errors.length > 0) {
+    if (!savedTurn.duplicate && aiResponse.errors && aiResponse.errors.length > 0) {
       try {
         await createMistakesFromErrors({
           userId: profile.id,
@@ -257,15 +250,8 @@ export async function POST(request: NextRequest) {
 
     // 11. 返回结果
     return NextResponse.json({
-      user_text: userText,
-      ai_reply: aiResponse.reply,
-      ai_audio: aiAudioBase64,
-      errors: aiResponse.errors || [],
-      scores: aiResponse.scores,
-      assessment_basis: 'transcript_only',
+      ...turnResponse(savedTurn, savedTurn.duplicate ? null : aiAudioBase64),
       ...(warnings.length ? { warning: warnings.join(' ') } : {}),
-      conversation_complete: aiResponse.conversation_complete || false,
-      encouragement: aiResponse.encouragement || null,
       latency_ms: latencyMs
     })
   } catch (error) {
@@ -274,5 +260,15 @@ export async function POST(request: NextRequest) {
       { error: 'Internal server error', details: (error as Error).message },
       { status: 500 }
     )
+  }
+}
+
+function turnResponse(turn: VerifiedTurn, audio: string | null) {
+  return {
+    user_text: turn.user_text, ai_reply: turn.ai_text, ai_audio: audio,
+    errors: turn.errors || [],
+    scores: { pronunciation: null, grammar: turn.grammar_score ?? null, word_choice: turn.word_choice_score ?? null, fluency: null },
+    assessment_basis: 'transcript_only', conversation_complete: turn.conversation_complete ?? false,
+    encouragement: turn.encouragement ?? null
   }
 }

@@ -20,7 +20,8 @@
     "voice:dry-run": "wrangler deploy --config workers/voice-gateway/wrangler.jsonc --dry-run",
     "voice:test": "node scripts/test-voice-gateway.mjs --duration-seconds 120",
     "voice:test:local": "node scripts/run-local-voice-test.mjs --duration-seconds 120",
-    "voice:configure:production": "node scripts/configure-production-voice.mjs"
+    "voice:configure:production": "node scripts/configure-production-voice.mjs",
+    "test:db": "node scripts/test-verified-progress.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -57,6 +58,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260813.1",
+    "@electric-sql/pglite": "0.5.16",
     "@opennextjs/cloudflare": "^1.20.1",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.17",

@@ -3,6 +3,7 @@
  * 根据用户历史成绩推荐下一步学习内容
  */
 
+import { ensureOwnedLearningProgress } from './verified-practice'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 export interface LearningUnit {
@@ -46,6 +47,7 @@ export async function getLearningPath(userId: string, hskLevel: number): Promise
   progress: Map<string, UserUnitProgress>
   recommendation: Recommendation | null
 }> {
+  await ensureOwnedLearningProgress(userId)
   const supabase = await createSupabaseServerClient()
 
   // 获取该 HSK 级别及以下的所有单元
@@ -88,14 +90,15 @@ export function generateRecommendation(
   for (const [index, unit] of units.entries()) {
     const p = progress.get(unit.id)
     const nextUnit = units[index + 1]
+    const nextInLevel = nextUnit?.hsk_level === unit.hsk_level ? nextUnit : undefined
 
     // 单元未解锁
     if (!p || p.status === 'locked') {
       // 检查前置条件
       const prevUnit = units[index - 1]
-      if (prevUnit) {
+      if (prevUnit && prevUnit.hsk_level === unit.hsk_level) {
         const prevProgress = progress.get(prevUnit.id)
-        if (!prevProgress || prevProgress.best_score < unit.unlock_score) {
+        if (!p || p.status === 'locked') {
           // 前置未达标 → 复习
           return {
             type: 'review',
@@ -118,12 +121,12 @@ export function generateRecommendation(
 
     // The next unit owns its entry threshold. The current unit's unlock_score
     // describes the previous unit and can be zero for the first unit.
-    const targetScore = nextUnit?.unlock_score ?? 65
+    const targetScore = nextInLevel?.unlock_score ?? 65
     if (p.best_score < targetScore) {
       return {
         type: 'practice_more',
         unit_id: unit.id,
-        reason: `在 "${unit.title}" 中继续练习。当前最高分：${p.best_score}，需要 ${targetScore} 分${nextUnit ? '解锁下一关' : '完成本单元'}。`,
+        reason: `在 "${unit.title}" 中继续练习。当前最高分：${p.best_score}，需要 ${targetScore} 分${nextInLevel ? '解锁下一关' : '完成本单元'}。`,
         suggested_scenarios: [],
         suggested_shadowing: 3
       }
@@ -131,7 +134,7 @@ export function generateRecommendation(
 
     if (nextUnit) {
       const nextProgress = progress.get(nextUnit.id)
-      if (!nextProgress || nextProgress.status === 'locked' || nextProgress.status === 'available') {
+      if (nextProgress && nextProgress.status === 'available') {
         return {
           type: 'try_harder',
           unit_id: nextUnit.id,
@@ -151,95 +154,4 @@ export function generateRecommendation(
     suggested_scenarios: [],
     suggested_shadowing: 0
   }
-}
-
-/**
- * 解锁用户的下一批单元
- */
-export async function unlockNextUnits(userId: string): Promise<void> {
-  const supabase = await createSupabaseServerClient()
-
-  // 获取所有单元按顺序
-  const { data: units } = await supabase
-    .from('learning_units')
-    .select('*')
-    .eq('is_active', true)
-    .order('sort_order')
-
-  if (!units) return
-
-  for (let i = 0; i < units.length; i++) {
-    const unit = units[i]
-    const { data: progress } = await supabase
-      .from('user_progress')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('unit_id', unit.id)
-      .single()
-
-    if (!progress) {
-      // 第一个单元或前置已达标 → 解锁
-      if (i === 0) {
-        await supabase.from('user_progress').upsert({
-          user_id: userId,
-          unit_id: unit.id,
-          status: 'available'
-        })
-      } else {
-        const prevUnit = units[i - 1]
-        const { data: prevProgress } = await supabase
-          .from('user_progress')
-          .select('best_score')
-          .eq('user_id', userId)
-          .eq('unit_id', prevUnit.id)
-          .single()
-
-        if (prevProgress && prevProgress.best_score >= unit.unlock_score) {
-          await supabase.from('user_progress').upsert({
-            user_id: userId,
-            unit_id: unit.id,
-            status: 'available'
-          })
-        }
-      }
-    }
-  }
-}
-
-/**
- * 更新用户在某个单元的分数
- */
-export async function updateUnitScore(
-  userId: string,
-  unitId: string,
-  score: number
-): Promise<void> {
-  const supabase = await createSupabaseServerClient()
-
-  const { data: existing } = await supabase
-    .from('user_progress')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('unit_id', unitId)
-    .single()
-
-  if (!existing) return
-
-  const newBest = Math.max(existing.best_score, score)
-  const newStatus = newBest >= 80 ? 'mastered' :
-                     newBest >= 65 ? 'completed' : 'in_progress'
-
-  await supabase
-    .from('user_progress')
-    .update({
-      best_score: newBest,
-      status: newStatus,
-      attempts: (existing.attempts || 0) + 1,
-      started_at: existing.started_at || new Date().toISOString(),
-      completed_at: newStatus === 'completed' || newStatus === 'mastered'
-        ? new Date().toISOString() : null,
-      mastered_at: newStatus === 'mastered' ? new Date().toISOString() : null
-    })
-    .eq('user_id', userId)
-    .eq('unit_id', unitId)
 }

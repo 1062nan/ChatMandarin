@@ -1,14 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: vi.fn() }))
+vi.mock('./verified-practice', () => ({ ensureOwnedLearningProgress: vi.fn() }))
 import { generateRecommendation, type LearningUnit, type UserUnitProgress } from './learning-path'
 const units = [
-  { id: 'first', title: 'First', unlock_score: 0, sort_order: 1 },
-  { id: 'next', title: 'Next', unlock_score: 60, sort_order: 3 },
+  { id: 'first', title: 'First', hsk_level: 1, unlock_score: 0, sort_order: 1 },
+  { id: 'next', title: 'Next', hsk_level: 1, unlock_score: 60, sort_order: 3 },
 ] as LearningUnit[]
 function progress(score: number, status: UserUnitProgress['status'] = 'in_progress') {
-  return new Map([['first', { unit_id: 'first', status, best_score: score, attempts: 1 }]])
+  return new Map<string, UserUnitProgress>([['first', { unit_id: 'first', status, best_score: score, attempts: 1 }], ['next', { unit_id: 'next', status: score >= 60 ? 'available' : 'locked', best_score: 0, attempts: 0 }]])
 }
 describe('learning path destination thresholds', () => {
+  it('does not use another HSK chapter entry threshold as completion', () => {
+    const chapters = [units[0], { ...units[1], hsk_level: 2, unlock_score: 0 }]
+    expect(generateRecommendation(chapters, progress(0))?.reason).toContain('65 分')
+    expect(generateRecommendation(chapters, progress(65))?.unit_id).toBe('next')
+  })
+  it('does not claim a stored locked unit is unlocked from an old score', () => {
+    const records = progress(100)
+    records.set('next', { unit_id: 'next', status: 'locked', best_score: 0, attempts: 0 })
+    expect(generateRecommendation(units, records)?.type).toBe('review')
+    expect(generateRecommendation(units, records)?.unit_id).toBe('first')
+  })
   it('does not skip first-unit practice because its entry threshold is zero', () => {
     const recommendation = generateRecommendation(units, progress(0, 'available'))
     expect(recommendation?.type).toBe('practice_more')

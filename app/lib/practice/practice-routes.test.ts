@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NextRequest } from 'next/server'
-const { createClient, recognize, model } = vi.hoisted(() => ({ createClient: vi.fn(), recognize: vi.fn(), model: vi.fn() }))
+const { createClient, recognize, model, saveAudio } = vi.hoisted(() => ({ createClient: vi.fn(), recognize: vi.fn(), model: vi.fn(), saveAudio: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: createClient }))
 vi.mock('@/lib/ai/volcengine-asr', () => ({ recognizeSpeech: recognize }))
 vi.mock('@/lib/ai/deepseek', () => ({ getHSKKScore: model }))
@@ -10,6 +10,7 @@ vi.mock('@/lib/practice/request', () => ({ validateAudioFile: () => ({ ok: true,
 vi.mock('@/lib/practice/scoring', () => import('./scoring'))
 vi.mock('@/lib/practice/hskk-scoring', () => import('./hskk-scoring'))
 vi.mock('@/lib/hskk/content', () => ({ HSKK_CONTENT: [{ level: 'beginner', variant: 1, readAloud: { passage: '你好' }, qa: { questions: [{ question: '你好？' }] }, pictureDescription: { prompt: '描述' } }] }))
+vi.mock('@/lib/db/verified-practice', () => ({ saveVerifiedAudioPractice: saveAudio }))
 import { POST as perform } from '../../app/api/dubbing/perform/route'
 import { POST as practice } from '../../app/api/dubbing/practice/route'
 import { POST as submit } from '../../app/api/hskk/submit/route'
@@ -20,6 +21,8 @@ function query(data: unknown, error: unknown = null) {
   return chain
 }
 function setup(failedSave = -1) {
+  if (failedSave === 0) saveAudio.mockRejectedValue(new Error('DB unavailable'))
+  else saveAudio.mockImplementation(async input => ({ source_id: 'saved', credited: true, duplicate: false, assessment: input.assessment }))
   const saves = [0, 1, 2].map(i => query({ id: 'saved' }, i === failedSave ? new Error('DB unavailable') : null))
   let writes = 0
   const from = vi.fn((table: string) => {
@@ -52,6 +55,7 @@ describe('dubbing transcript matching routes', () => {
     recognize.mockResolvedValue({ text: '……！' })
     expect((await route(request())).status).toBe(422)
     expect(db.from).not.toHaveBeenCalledWith('dubbing_performances')
+    expect(saveAudio).not.toHaveBeenCalled()
   })
   it('does not report successful performance when save fails', async () => {
     setup(0)

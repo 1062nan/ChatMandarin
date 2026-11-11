@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     const result = await endConversation(conversation_id, profile.id)
 
-    return NextResponse.json({ success: true, ended: result.ended })
+    return NextResponse.json({ success: true, ended: result.ended, progress: result.progress })
   } catch (error) {
     console.error('End conversation failed:', error)
     return NextResponse.json({ error: 'Failed' }, { status: 500 })

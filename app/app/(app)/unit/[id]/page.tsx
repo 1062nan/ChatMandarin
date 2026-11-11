@@ -1,3 +1,4 @@
+import { ensureOwnedLearningProgress } from '@/lib/db/verified-practice'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -22,6 +23,7 @@ export default async function UnitPage({
     .eq('auth_id', user.id)
     .single()
   if (!profile) return null
+  await ensureOwnedLearningProgress(profile.id)
 
   const { data: unit } = await supabase
     .from('learning_units')
@@ -38,6 +40,7 @@ export default async function UnitPage({
     .from('learning_units')
     .select('unlock_score')
     .eq('is_active', true)
+    .eq('hsk_level', unit.hsk_level)
     .gt('sort_order', unit.sort_order)
     .order('sort_order')
     .limit(1)

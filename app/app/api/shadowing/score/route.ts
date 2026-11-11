@@ -9,6 +9,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { getSubscriptionContext, consumeQuota } from '@/lib/subscription/tier'
 import { comparePracticeTexts } from '@/lib/practice/scoring'
+import { saveVerifiedAudioPractice } from '@/lib/db/verified-practice'
 import { validateAudioFile } from '@/lib/practice/request'
 
 export const runtime = 'nodejs'
@@ -75,28 +76,16 @@ export async function POST(request: NextRequest) {
     const originalText = sentence.text_zh
     const comparison = comparePracticeTexts(asrResult.text, originalText)
 
-    // 保存记录
-    const { error: saveError } = await supabase.from('shadowing_records').insert({
-      user_id: profile.id,
-      sentence_id: sentenceId,
-      pronunciation_score: null,
-      tone_score: null,
-      fluency_score: null,
-      transcript: asrResult.text,
-      errors: comparison.errors
-    })
-    if (saveError) throw saveError
-
+    const assessment = {
+      transcript: asrResult.text, original: originalText,
+      transcript_match_score: comparison.accuracyScore, assessment_basis: 'transcript_only',
+      pronunciation_score: null, tone_score: null, fluency_score: null,
+      char_comparison: comparison.charByChar, errors: comparison.errors
+    }
+    const progress = await saveVerifiedAudioPractice({ profileId: profile.id, kind: 'shadowing', contentId: sentence.id, audio: audioBuffer, score: comparison.accuracyScore, transcript: asrResult.text, errors: comparison.errors, assessment })
     return NextResponse.json({
-      transcript: asrResult.text,
-      original: originalText,
-      transcript_match_score: comparison.accuracyScore,
-      assessment_basis: 'transcript_only',
-      pronunciation_score: null,
-      tone_score: null,
-      fluency_score: null,
-      char_comparison: comparison.charByChar,
-      errors: comparison.errors
+      ...progress.assessment, record_id: progress.source_id,
+      progress: { credited: progress.credited, unit_id: progress.unit_id, duplicate: progress.duplicate }
     })
   } catch (error) {
     console.error('Shadowing score failed:', error)

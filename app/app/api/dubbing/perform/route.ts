@@ -9,6 +9,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { getSubscriptionContext } from '@/lib/subscription/tier'
 import { comparePracticeTexts, normalizePracticeText } from '@/lib/practice/scoring'
+import { saveVerifiedAudioPractice } from '@/lib/db/verified-practice'
 import { validateAudioFile } from '@/lib/practice/request'
 
 export const runtime = 'nodejs'
@@ -81,42 +82,18 @@ export async function POST(request: NextRequest) {
     const comparison = comparePracticeTexts(asrResult.text, allOriginal)
     const total = comparison.accuracyScore
 
-    // 保存到数据库
-    const { data: performance, error: saveError } = await supabase
-      .from('dubbing_performances')
-      .insert({
-        user_id: profile.id,
-        clip_id: clipId,
-        total_score: total,
-        pronunciation_score: null,
-        tone_score: null,
-        emotion_score: null,
-        rhythm_score: null,
-        fluency_score: null,
-        transcript: asrResult.text,
-        mode: 'perform'
-      })
-      .select()
-      .single()
-    if (saveError) throw saveError
-
-    return NextResponse.json({
-      performance_id: performance?.id,
+    const assessment = {
       transcript: asrResult.text,
-      scores: {
-        pronunciation: null,
-        tone: null,
-        emotion: null,
-        rhythm: null,
-        fluency: null
-      },
-      total_score: total,
-      transcript_match_score: total,
-      assessment_basis: 'transcript_match',
-      clip_title: clip.title,
-      line_count: lines.length,
+      scores: { pronunciation: null, tone: null, emotion: null, rhythm: null, fluency: null },
+      total_score: total, transcript_match_score: total, assessment_basis: 'transcript_match',
+      clip_title: clip.title, line_count: lines.length,
       chars_correct: comparison.charByChar.filter((entry) => entry.correct).length,
       chars_total: comparison.charByChar.length
+    }
+    const progress = await saveVerifiedAudioPractice({ profileId: profile.id, kind: 'dubbing', contentId: clip.id, audio: audioBuffer, score: total, transcript: asrResult.text, assessment })
+    return NextResponse.json({
+      ...progress.assessment, performance_id: progress.source_id,
+      progress: { credited: progress.credited, unit_id: progress.unit_id, duplicate: progress.duplicate }
     })
   } catch (error) {
     console.error('Dubbing perform failed:', error)
