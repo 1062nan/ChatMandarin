@@ -27,9 +27,10 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { recognizeSpeech } from '@/lib/ai/volcengine-asr'
 import { getHSKKScore } from '@/lib/ai/deepseek'
 import { buildHSKKPrompt } from '@/lib/ai/prompts'
-import { getSubscriptionContext, consumeQuota } from '@/lib/subscription/tier'
-import { HSKK_CONTENT, type HSKKLevel } from '@/lib/hskk/content'
+import { hskkFingerprint, reserveHskk, finishHskk, failHskk } from '@/lib/db/hskk-submission'
+import { HSKK_CONTENT } from '@/lib/hskk/content'
 import { validateAudioFile } from '@/lib/practice/request'
+import { validateConversationWav } from '@/lib/audio/conversation-wav'
 import { isScorableTranscript, validateHSKKContentAssessment } from '@/lib/practice/hskk-scoring'
 
 export const runtime = 'nodejs'
@@ -37,6 +38,7 @@ export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
+  let activeLease: { profileId: string; fingerprint: string; lease: string } | null = null
 
   try {
     // 1. 鉴权
@@ -88,62 +90,36 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'All 3 audio sections are required' }, { status: 400 })
     }
 
-    const subCtx = await getSubscriptionContext(profile.id)
-    const quotaCheck = await consumeQuota(subCtx, profile.id, 'hskk')
-    if (!quotaCheck.ok) {
-      const messages: Record<string, string> = {
-        daily_exceeded: 'Daily HSKK limit reached. Upgrade for more.',
-        monthly_exceeded: 'Monthly HSKK limit reached. Upgrade to Pro for unlimited.',
+    const sectionAudio = [readAudio, qaAudio, pictureAudio]
+    const buffers = await Promise.all(sectionAudio.map(audio => audio.file.arrayBuffer()))
+    for (let index = 0; index < sectionAudio.length; index++) {
+      if (sectionAudio[index].format === 'wav') {
+        const validation = validateConversationWav(buffers[index], index === 1 ? 260 : 120)
+        if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 })
       }
-      return NextResponse.json(
-        {
-          error: messages[quotaCheck.reason || 'daily_exceeded'],
-          upgrade_required: true,
-          limit_type: quotaCheck.reason,
-          remaining: quotaCheck.remaining,
-          plan: subCtx.plan,
-        },
-        { status: 429 }
-      )
     }
-
-    const sectionReadAudio = readAudio.file
-    const sectionQaAudio = qaAudio.file
-    const sectionPictureAudio = pictureAudio.file
+    const fingerprint = hskkFingerprint(level, testVariant, buffers)
+    const reservation = await reserveHskk(supabase, profile.id, fingerprint, level)
+    if (reservation.state === 'completed' && reservation.response) return NextResponse.json(reservation.response)
+    if (reservation.state === 'processing') return NextResponse.json({ error: 'This recording is already being scored. Please retry shortly.' }, { status: 409, headers: { 'Retry-After': '5' } })
+    if (reservation.state === 'quota_denied') return NextResponse.json({ error: 'HSKK practice limit reached. Upgrade for more.', upgrade_required: true, limit_type: reservation.reason }, { status: 429 })
+    if (!reservation.test_id || !reservation.lease_token) throw new Error('Invalid HSKK reservation lease')
+    activeLease = { profileId: profile.id, fingerprint, lease: reservation.lease_token }
     const referenceText = test.readAloud.passage
     const qaQuestions = test.qa.questions.map((question) => question.question)
     const picturePrompt = test.pictureDescription.prompt
 
-    // All sections must transcribe successfully before creating or scoring a test.
+    // All sections must transcribe successfully before completing the reserved test.
     const [readResult, qaResult, pictureResult] = await Promise.all([
-      recognizeSpeech(await sectionReadAudio.arrayBuffer(), readAudio.format, 16000),
-      recognizeSpeech(await sectionQaAudio.arrayBuffer(), qaAudio.format, 16000),
-      recognizeSpeech(await sectionPictureAudio.arrayBuffer(), pictureAudio.format, 16000),
+      recognizeSpeech(buffers[0], readAudio.format, 16000),
+      recognizeSpeech(buffers[1], qaAudio.format, 16000),
+      recognizeSpeech(buffers[2], pictureAudio.format, 16000),
     ])
     if (![readResult, qaResult, pictureResult].every((result) => isScorableTranscript(result.text))) {
+      await failHskk(profile.id, fingerprint, reservation.lease_token)
+      activeLease = null
       return NextResponse.json({ error: 'Could not understand all three sections. Please record again.' }, { status: 422 })
     }
-    const { data: hskkTest, error: dbError } = await supabase
-      .from('hskk_tests')
-      .insert({ user_id: profile.id, level: level as HSKKLevel, status: 'processing' })
-      .select().single()
-    if (dbError) throw dbError
-
-    // 保存转录到数据库
-    const { error: transcriptSaveError } = await supabase
-      .from('hskk_tests')
-      .update({
-        section_read_text: readResult.text,
-        section_qa_text: qaQuestions.map((q, i) => ({
-          question: q,
-          answer: extractAnswer(qaResult.text, i)
-        })),
-        section_picture_text: pictureResult.text
-      })
-      .eq('id', hskkTest.id)
-
-    if (transcriptSaveError) throw transcriptSaveError
-
     // 7. DeepSeek 评分（综合 3 部分）
     const scoringPrompt = buildHSKKPrompt({
       level,
@@ -154,46 +130,12 @@ export async function POST(request: NextRequest) {
       pictureDescription: picturePrompt
     })
 
-    let scoreResult
-    try {
-      scoreResult = validateHSKKContentAssessment(await getHSKKScore(scoringPrompt))
-    } catch (scoringError) {
-      console.error('DeepSeek scoring failed:', scoringError)
-      // Invalid or unavailable assessment must not become a successful report.
-      const { error: failureSaveError } = await supabase
-        .from('hskk_tests')
-        .update({ status: 'failed' })
-        .eq('id', hskkTest.id)
-
-      if (failureSaveError) throw failureSaveError
-      return NextResponse.json(
-        { error: 'Scoring failed. Please try again.' },
-        { status: 500 }
-      )
-    }
-
-    // 8. 保存评分到数据库
+    const scoreResult = validateHSKKContentAssessment(await getHSKKScore(scoringPrompt))
     const latencyMs = Date.now() - startTime
-    const { error: scoreSaveError } = await supabase
-      .from('hskk_tests')
-      .update({
-        total_score: scoreResult.total_score,
-        pronunciation_score: scoreResult.scores.pronunciation,
-        fluency_score: scoreResult.scores.fluency,
-        grammar_score: scoreResult.scores.grammar,
-        vocabulary_score: scoreResult.scores.vocabulary,
-        content_score: scoreResult.scores.content,
-        feedback: scoreResult,
-        status: 'completed',
-        completed_at: new Date().toISOString()
-      })
-      .eq('id', hskkTest.id)
-
-    if (scoreSaveError) throw scoreSaveError
 
     // 9. 返回结果
-    return NextResponse.json({
-      test_id: hskkTest.id,
+    const response = {
+      test_id: reservation.test_id,
       transcripts: {
         read: readResult.text,
         qa: qaResult.text,
@@ -207,9 +149,16 @@ export async function POST(request: NextRequest) {
       strengths: scoreResult.strengths,
       overall_feedback: scoreResult.overall_feedback,
       latency_ms: latencyMs
-    })
+    }
+    await finishHskk(profile.id, fingerprint, reservation.lease_token, response, qaQuestions.map((question, index) => ({ question, answer: extractAnswer(qaResult.text, index) })))
+    activeLease = null
+    return NextResponse.json(response)
   } catch (error) {
     console.error('HSKK submission failed:', error)
+    if (activeLease) {
+      try { await failHskk(activeLease.profileId, activeLease.fingerprint, activeLease.lease) }
+      catch (failureError) { console.error('HSKK failure state update failed:', failureError) }
+    }
     return NextResponse.json(
       { error: 'Failed to process HSKK test. Please try again.' },
       { status: 500 }

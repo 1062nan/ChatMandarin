@@ -11,6 +11,7 @@ import { getSubscriptionContext } from '@/lib/subscription/tier'
 import { comparePracticeTexts, normalizePracticeText } from '@/lib/practice/scoring'
 import { saveVerifiedAudioPractice } from '@/lib/db/verified-practice'
 import { validateAudioFile } from '@/lib/practice/request'
+import { validateConversationWav } from '@/lib/audio/conversation-wav'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -70,6 +71,10 @@ export async function POST(request: NextRequest) {
 
     // ASR 全文
     const audioBuffer = await audio.file.arrayBuffer()
+    if (audio.format === 'wav') {
+      const validation = validateConversationWav(audioBuffer)
+      if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 })
+    }
     const asrResult = await recognizeSpeech(audioBuffer, audio.format, 16000)
 
     if (!normalizePracticeText(asrResult.text)) {

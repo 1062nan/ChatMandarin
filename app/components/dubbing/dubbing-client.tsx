@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Mic, MicOff, Loader2, Volume2, Film, ChevronRight, RotateCcw, Star, Home } from 'lucide-react'
 import { AudioRecorder } from '@/lib/audio/wav-encoder'
+import { RecordingUpload } from '@/components/audio/recording-upload'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
@@ -33,7 +34,7 @@ interface Clip {
 
 type Phase = 'select' | 'practice' | 'perform-ready' | 'performing' | 'perform-result'
 
-export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: string }) {
+export function DubbingClient({ clips, ttsVoice, allowed }: { clips: Clip[]; ttsVoice: string; allowed: boolean }) {
   const router = useRouter()
   const [phase, setPhase] = useState<Phase>('select')
   const [selectedClip, setSelectedClip] = useState<Clip | null>(null)
@@ -47,6 +48,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
   const [performScore, setPerformScore] = useState<any | null>(null)
   const [audioRecorder] = useState(() => new AudioRecorder())
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const processingRef = useRef(false)
 
   useEffect(() => {
     audioRecorder.onAudioLevel = setAudioLevel
@@ -87,60 +89,41 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
     }
   }, [audioRecorder])
 
-  // 逐句练习评分
-  const stopAndScore = useCallback(async () => {
+  const submitAudio = useCallback(async (blob: Blob, full: boolean) => {
+    if (!selectedClip || processingRef.current) return
+    processingRef.current = true
+    setProcessing(true)
+    try {
+      const formData = new FormData()
+      formData.append('audio', blob, full ? 'performance.wav' : 'line.wav')
+      formData.append('clip_id', selectedClip.id)
+      if (!full) formData.append('line_index', String(lineIndex))
+      const res = await fetch(full ? '/api/dubbing/perform' : '/api/dubbing/practice', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Scoring failed')
+      if (full) { setPerformScore(data); setPhase('perform-result') }
+      else {
+        setScore(data)
+        // Retrying a line replaces its result rather than biasing the average.
+        setLineScores(prev => [...prev.filter(item => item.lineIndex !== lineIndex), { lineIndex, ...data }])
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Scoring failed')
+    } finally {
+      processingRef.current = false
+      setProcessing(false)
+    }
+  }, [selectedClip, lineIndex])
+
+  const stopAndSubmit = useCallback(async (full: boolean) => {
     const result = await audioRecorder.stop()
     setIsRecording(false)
     if (!result || result.blob.size < 1000 || result.duration < 0.3) {
       toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
       return
     }
-
-    setProcessing(true)
-    try {
-      const formData = new FormData()
-      formData.append('audio', result.blob, 'line.wav')
-      formData.append('clip_id', selectedClip!.id)
-      formData.append('line_index', String(lineIndex))
-
-      const res = await fetch('/api/dubbing/practice', { method: 'POST', body: formData })
-      if (!res.ok) throw new Error('Scoring failed')
-      const data = await res.json()
-      setScore(data)
-      setLineScores(prev => [...prev, { lineIndex, ...data }])
-    } catch {
-      toast.error('Failed to score')
-    } finally {
-      setProcessing(false)
-    }
-  }, [audioRecorder, selectedClip, lineIndex])
-
-  // 正式表演
-  const stopAndPerform = useCallback(async () => {
-    const result = await audioRecorder.stop()
-    setIsRecording(false)
-    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
-      toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
-      return
-    }
-
-    setProcessing(true)
-    try {
-      const formData = new FormData()
-      formData.append('audio', result.blob, 'performance.wav')
-      formData.append('clip_id', selectedClip!.id)
-
-      const res = await fetch('/api/dubbing/perform', { method: 'POST', body: formData })
-      if (!res.ok) throw new Error('Performance scoring failed')
-      const data = await res.json()
-      setPerformScore(data)
-      setPhase('perform-result')
-    } catch {
-      toast.error('Performance scoring failed')
-    } finally {
-      setProcessing(false)
-    }
-  }, [audioRecorder, selectedClip])
+    await submitAudio(result.blob, full)
+  }, [audioRecorder, submitAudio])
 
   const nextLine = () => {
     setScore(null)
@@ -153,6 +136,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
   }
 
   const selectClip = (clip: Clip) => {
+    if (!allowed) { toast.error('Dubbing is a Plus feature. Upgrade to unlock.'); return }
     setSelectedClip(clip)
     setLineIndex(0)
     setScore(null)
@@ -183,6 +167,10 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
           </p>
         </div>
 
+        {!allowed && <Card><CardContent className="p-4 text-center">
+          <p>Dubbing requires Plus or Pro. You can browse the scenes below, but recording and scoring are unavailable on Free.</p>
+          <Button className="mt-3" onClick={() => router.push('/settings#subscription')}>View plans</Button>
+        </CardContent></Card>}
         <div className="grid gap-4">
           {clips.map(clip => (
             <Card key={clip.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => selectClip(clip)}>
@@ -287,12 +275,13 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
                 ))}
               </div>
             )}
-            <button onClick={isRecording ? stopAndScore : startRecording}
+            <button aria-label={isRecording ? "Stop and score line" : "Record dub line"} onClick={isRecording ? () => stopAndSubmit(false) : startRecording}
               className={cn('flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all',
                 isRecording ? 'scale-110 animate-pulse bg-vermilion-deep text-white' : 'bg-vermilion text-white hover:scale-105')}>
               {isRecording ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
             </button>
             <p className="text-sm text-muted-foreground">{isRecording ? 'Click to stop' : 'Click to dub this line'}</p>
+            <RecordingUpload id="dubbing-line-upload" disabled={isRecording || processing} onUpload={file => submitAudio(file, false)} />
           </div>
         )}
         {processing && (
@@ -368,7 +357,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
               ))}
             </div>
           )}
-          <button onClick={isRecording ? stopAndPerform : startRecording}
+          <button disabled={processing} aria-label={isRecording ? "Stop and score performance" : "Record full performance"} onClick={isRecording ? () => stopAndSubmit(true) : startRecording}
             className={cn('flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all',
               isRecording ? 'scale-110 animate-pulse bg-vermilion-deep text-white' : 'bg-vermilion text-white hover:scale-105')}>
             {isRecording ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
@@ -376,6 +365,7 @@ export function DubbingClient({ clips, ttsVoice }: { clips: Clip[]; ttsVoice: st
           <p className="text-sm text-muted-foreground">
             {isRecording ? 'Recording... Click to finish' : 'Click to start full dub'}
           </p>
+          <RecordingUpload id="dubbing-full-upload" disabled={isRecording || processing} onUpload={file => submitAudio(file, true)} />
         </div>
         {processing && (
           <div className="flex flex-col items-center gap-3 py-8">

@@ -1,16 +1,17 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Mic, MicOff, Loader2, Clock, Camera, BookOpen, MessageSquare, CheckCircle2, ChevronRight, RotateCcw, Volume2 } from 'lucide-react'
 import { AudioRecorder } from '@/lib/audio/wav-encoder'
+import { RecordingUpload } from '@/components/audio/recording-upload'
+import { mergeHskkWavBlobs } from '@/lib/hskk/wav'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils/cn'
 import { getRandomTest, type HSKKLevel, type HSKKTestContent } from '@/lib/hskk/content'
 
-type Phase = 'select' | 'read-prep' | 'read-record' | 'qa-intro' | 'qa-record' | 'picture-prep' | 'picture-record' | 'submitting' | 'result'
+type Phase = 'select' | 'read-prep' | 'read-record' | 'qa-intro' | 'qa-record' | 'picture-prep' | 'picture-record' | 'submitting' | 'submit-error' | 'result'
 
 interface HSKKResult {
   test_id: string
@@ -35,7 +36,6 @@ interface HSKKResult {
 }
 
 export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
-  const router = useRouter()
   const [phase, setPhase] = useState<Phase>('select')
   const [selectedTest, setSelectedTest] = useState<HSKKTestContent | null>(null)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -51,6 +51,8 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
   const [result, setResult] = useState<HSKKResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const countdownRef = useRef<NodeJS.Timeout | null>(null)
+  const submittingRef = useRef(false)
+  const recordingActionRef = useRef(false)
 
   useEffect(() => {
     audioRecorder.onAudioLevel = setAudioLevel
@@ -64,39 +66,49 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
   const startCountdown = useCallback((seconds: number, onComplete: () => void) => {
     setCountdown(seconds)
     if (countdownRef.current) clearInterval(countdownRef.current)
+    const deadline = Date.now() + seconds * 1000
     countdownRef.current = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          if (countdownRef.current) clearInterval(countdownRef.current)
-          onComplete()
-          return 0
-        }
-        return prev - 1
-      })
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+      setCountdown(remaining)
+      if (!remaining) {
+        if (countdownRef.current) clearInterval(countdownRef.current)
+        countdownRef.current = null
+        onComplete()
+      }
     }, 1000)
   }, [])
 
   // 开始录音
   const startRecording = useCallback(async () => {
+    if (recordingActionRef.current || isRecording) return
+    recordingActionRef.current = true
     try {
       await audioRecorder.start()
       setIsRecording(true)
     } catch {
       toast.error('Microphone access denied')
       setError('Please allow microphone access')
+    } finally {
+      recordingActionRef.current = false
     }
-  }, [audioRecorder])
+  }, [audioRecorder, isRecording])
 
   // 停止录音
   const stopRecording = useCallback(async (): Promise<Blob | null> => {
-    const result = await audioRecorder.stop()
-    setIsRecording(false)
-    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
-      toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
-      return null
+    if (recordingActionRef.current || !isRecording) return null
+    recordingActionRef.current = true
+    try {
+      const result = await audioRecorder.stop()
+      setIsRecording(false)
+      if (!result || result.blob.size < 1000 || result.duration < 0.3) {
+        toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
+        return null
+      }
+      return result.blob
+    } finally {
+      recordingActionRef.current = false
     }
-    return result.blob
-  }, [audioRecorder])
+  }, [audioRecorder, isRecording])
 
   // 选择级别
   const handleSelectLevel = (level: HSKKLevel) => {
@@ -111,53 +123,45 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
     startCountdown(test.readAloud.preparationTime, () => setPhase('read-record'))
   }
 
-  // 朗读部分：录音完成
-  const handleReadRecorded = async () => {
-    const blob = await stopRecording()
-    if (!blob) return
+  const acceptRead = (blob: Blob) => {
+    setError(null)
     setRecordings(prev => ({ ...prev, read: blob }))
     setPhase('qa-intro')
   }
-
-  // 问答部分
-  const handleQaRecorded = async () => {
-    const blob = await stopRecording()
-    if (!blob) return
+  const acceptQa = (blob: Blob) => {
+    setError(null)
     setRecordings(prev => ({ ...prev, qa: [...prev.qa, blob] }))
-
     if (selectedTest && currentQuestionIndex < selectedTest.qa.questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1)
     } else {
       setPhase('picture-prep')
-      if (selectedTest) {
-        startCountdown(selectedTest.pictureDescription.preparationTime, () => setPhase('picture-record'))
-      }
+      if (selectedTest) startCountdown(selectedTest.pictureDescription.preparationTime, () => setPhase('picture-record'))
     }
   }
-
-  // 看图说话：录音完成
-  const handlePictureRecorded = async () => {
-    const blob = await stopRecording()
-    if (!blob) return
+  const acceptPicture = async (blob: Blob) => {
+    setError(null)
     setRecordings(prev => ({ ...prev, picture: blob }))
     await handleSubmit(blob)
   }
+  const handleReadRecorded = async () => { const blob = await stopRecording(); if (blob) acceptRead(blob) }
+  const handleQaRecorded = async () => { const blob = await stopRecording(); if (blob) acceptQa(blob) }
+  const handlePictureRecorded = async () => { const blob = await stopRecording(); if (blob) await acceptPicture(blob) }
 
   // 提交评分
   const handleSubmit = async (pictureRecording?: Blob) => {
+    if (submittingRef.current) return
     const picture = pictureRecording || recordings.picture
-    if (!selectedTest || !recordings.read || !picture || recordings.qa.length === 0) {
+    if (!selectedTest || !recordings.read || !picture || recordings.qa.length !== selectedTest.qa.questions.length) {
       toast.error('Missing recordings')
       return
     }
 
+    submittingRef.current = true
+    setError(null)
     setPhase('submitting')
 
     try {
-      // 合并 Q&A 录音：提取 PCM 数据后合并，保留第一个 WAV 头
-      const qaBlob = recordings.qa.length === 1
-        ? recordings.qa[0]
-        : await mergeWavBlobs(recordings.qa)
+      const qaBlob = await mergeHskkWavBlobs(recordings.qa)
 
       const formData = new FormData()
       formData.append('section_read', recordings.read, 'read.wav')
@@ -173,11 +177,6 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}))
-        if (errData.upgrade_required) {
-          toast.error('Free tier limit reached. Upgrade for unlimited HSKK tests.')
-          router.push('/settings')
-          return
-        }
         throw new Error(errData.error || 'Scoring failed')
       }
 
@@ -185,14 +184,19 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
       setResult(data)
       setPhase('result')
     } catch (err) {
-      setError((err as Error).message)
-      setPhase('read-prep')
-      startCountdown(selectedTest!.readAloud.preparationTime, () => setPhase('read-record'))
+      setError(err instanceof Error ? err.message : 'Scoring failed')
+      setPhase('submit-error')
+    } finally {
+      submittingRef.current = false
     }
   }
 
   // 重置
   const handleReset = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current)
+    countdownRef.current = null
+    audioRecorder.cancel()
+    setIsRecording(false)
     setPhase('select')
     setSelectedTest(null)
     setRecordings({ qa: [] })
@@ -213,6 +217,18 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
 
   if (!selectedTest) return null
 
+  if (phase === 'submit-error') {
+    return <div className="mx-auto max-w-2xl space-y-4 py-12 text-center">
+      <h2 className="text-xl font-bold">Could not score this test</h2>
+      <p role="alert">{error}</p>
+      <p className="text-sm text-muted-foreground">Your recordings are still available in this page. Retry without recording again, or start a new test.</p>
+      <div className="flex justify-center gap-3">
+        <Button onClick={() => void handleSubmit()}>Retry submission</Button>
+        <Button variant="outline" onClick={handleReset}>Start over</Button>
+      </div>
+    </div>
+  }
+
   // 朗读准备
   if (phase === 'read-prep') {
     return (
@@ -220,9 +236,10 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
         title="Section 1: Read Aloud"
         icon={<BookOpen className="h-6 w-6" />}
         countdown={countdown}
+        onReady={() => { if (countdownRef.current) clearInterval(countdownRef.current); countdownRef.current = null; setPhase('read-record') }}
         content={
           <div>
-            <p className="mb-4 text-sm text-muted-foreground">请朗读下面这段文字。准备时间结束后会自动开始录音。</p>
+            <p className="mb-4 text-sm text-muted-foreground">请朗读下面这段文字。准备时间结束后，请点击录音按钮或上传录音。</p>
             <div className="rounded-lg bg-rice p-6 cn-font text-lg leading-relaxed">
               {selectedTest.readAloud.passage}
             </div>
@@ -242,6 +259,8 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
         audioLevel={audioLevel}
         onStart={startRecording}
         onStop={handleReadRecorded}
+        onUpload={acceptRead}
+        uploadId="hskk-read-upload"
         instruction="Read the passage aloud clearly"
         showPassage={selectedTest.readAloud.passage}
       />
@@ -285,7 +304,10 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
         isRecording={isRecording}
         audioLevel={audioLevel}
         onStart={startRecording}
+        key={`qa-${currentQuestionIndex}`}
         onStop={handleQaRecorded}
+        onUpload={acceptQa}
+        uploadId="hskk-qa-upload"
         instruction="Answer the question in Chinese"
         showQuestion={question.question}
         ttsText={question.question}
@@ -301,9 +323,10 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
         title="Section 3: Picture Description"
         icon={<Camera className="h-6 w-6" />}
         countdown={countdown}
+        onReady={() => { if (countdownRef.current) clearInterval(countdownRef.current); countdownRef.current = null; setPhase('picture-record') }}
         content={
           <div>
-            <p className="mb-4 text-sm text-muted-foreground">请看图片，描述你看到的内容。准备时间结束后会自动开始录音。</p>
+            <p className="mb-4 text-sm text-muted-foreground">请看图片，描述你看到的内容。准备时间结束后，请点击录音按钮或上传录音。</p>
             <img
               src={selectedTest.pictureDescription.imageUrl}
               alt="Picture to describe"
@@ -326,6 +349,8 @@ export function HSKKClient({ tests }: { tests: HSKKTestContent[] }) {
         audioLevel={audioLevel}
         onStart={startRecording}
         onStop={handlePictureRecorded}
+        onUpload={acceptPicture}
+        uploadId="hskk-picture-upload"
         instruction="Describe the picture in Chinese"
         showImage={selectedTest.pictureDescription.imageUrl}
       />
@@ -412,7 +437,7 @@ function LevelSelect({ tests, onSelect }: { tests: HSKKTestContent[]; onSelect: 
 
 // ============ 准备画面 ============
 
-function PrepScreen({ title, icon, countdown, content }: { title: string; icon: React.ReactNode; countdown: number; content: React.ReactNode }) {
+function PrepScreen({ title, icon, countdown, content, onReady }: { title: string; icon: React.ReactNode; countdown: number; content: React.ReactNode; onReady: () => void }) {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center gap-3">
@@ -429,10 +454,11 @@ function PrepScreen({ title, icon, countdown, content }: { title: string; icon: 
       </Card>
 
       <div className="text-center">
-        <p className="mb-2 text-sm text-muted-foreground">Recording starts in</p>
+        <p className="mb-2 text-sm text-muted-foreground">Recording step opens in</p>
         <div className="inline-flex h-16 w-16 items-center justify-center rounded-full bg-vermilion text-2xl font-bold text-white">
           {countdown}
         </div>
+        <div className="mt-4"><Button variant="outline" onClick={onReady}>Ready now</Button></div>
       </div>
     </div>
   )
@@ -440,13 +466,15 @@ function PrepScreen({ title, icon, countdown, content }: { title: string; icon: 
 
 // ============ 录音画面 ============
 
-function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, instruction, showPassage, showQuestion, showImage, progress, ttsText }: {
+function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, onUpload, uploadId, instruction, showPassage, showQuestion, showImage, progress, ttsText }: {
   title: string
   icon: React.ReactNode
   isRecording: boolean
   audioLevel: number
   onStart: () => void
   onStop: () => void
+  onUpload: (file: File) => void | Promise<void>
+  uploadId: string
   instruction: string
   showPassage?: string
   showQuestion?: string
@@ -589,6 +617,7 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, i
 
         {/* 录音按钮 */}
         <button
+          aria-label={isRecording ? 'Stop recording' : 'Start recording'}
           onClick={isRecording ? onStop : (canRecord ? onStart : undefined)}
           disabled={!canRecord && !isRecording}
           className={cn(
@@ -610,6 +639,8 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, i
               ? 'Listen to the question first...'
               : instruction}
         </p>
+        <RecordingUpload id={uploadId} onUpload={onUpload} disabled={isRecording || !canRecord}
+          help="WAV · 16 kHz · mono · 16-bit PCM · 0.3–120 seconds per answer. All recordings are sent for recognition and use your test allowance after the final section." />
       </div>
 
       {/* 隐藏的 audio 元素 */}
@@ -742,40 +773,4 @@ function ResultView({ result, onReset }: { result: HSKKResult; onReset: () => vo
       </div>
     </div>
   )
-}
-
-// ============ WAV 合并工具 ============
-
-/**
- * 合并多个 WAV Blob：保留第一个 WAV 头，拼接后续的 PCM 数据
- */
-async function mergeWavBlobs(blobs: Blob[]): Promise<Blob> {
-  const arrays = await Promise.all(blobs.map(b => b.arrayBuffer()))
-  const buffers = arrays.map(a => new Uint8Array(a))
-
-  // 第一个 WAV 的头（44 字节）
-  const header = buffers[0].slice(0, 44)
-
-  // 提取所有 PCM 数据（跳过 44 字节头）
-  const pcmChunks: Uint8Array[] = [buffers[0].slice(44)]
-  for (let i = 1; i < buffers.length; i++) {
-    pcmChunks.push(buffers[i].slice(44))
-  }
-
-  const totalPcmLength = pcmChunks.reduce((sum, chunk) => sum + chunk.length, 0)
-
-  // 更新 WAV 头中的 data size
-  const result = new Uint8Array(44 + totalPcmLength)
-  result.set(header, 0)
-  // data chunk size at offset 40 (4 bytes LE)
-  const view = new DataView(result.buffer)
-  view.setUint32(40, totalPcmLength, true)
-
-  let offset = 44
-  for (const chunk of pcmChunks) {
-    result.set(chunk, offset)
-    offset += chunk.length
-  }
-
-  return new Blob([result], { type: 'audio/wav' })
 }

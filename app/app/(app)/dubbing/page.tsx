@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server'
+import { getSubscriptionContext } from '@/lib/subscription/tier'
 import { DubbingClient } from '@/components/dubbing/dubbing-client'
 
 export const metadata = { title: 'Movie Dubbing' }
@@ -10,7 +11,7 @@ export default async function DubbingPage() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('hsk_level, tts_voice_type')
+    .select('id, hsk_level, tts_voice_type')
     .eq('auth_id', user.id)
     .single()
 
@@ -20,5 +21,6 @@ export default async function DubbingPage() {
     .eq('is_active', true)
     .order('created_at')
 
-  return <DubbingClient clips={clips || []} ttsVoice={profile?.tts_voice_type || 'BV700_streaming'} />
+  const access = profile ? await getSubscriptionContext(profile.id) : null
+  return <DubbingClient allowed={access?.features.dubbing.allowed ?? false} clips={clips || []} ttsVoice={profile?.tts_voice_type || 'BV700_streaming'} />
 }

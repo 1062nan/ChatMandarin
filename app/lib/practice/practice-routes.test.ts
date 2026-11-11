@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { NextRequest } from 'next/server'
-const { createClient, recognize, model, saveAudio } = vi.hoisted(() => ({ createClient: vi.fn(), recognize: vi.fn(), model: vi.fn(), saveAudio: vi.fn() }))
+import { encodeWAV } from '../audio/wav-encoder'
+const { createClient, recognize, model, saveAudio, validate, quota, reserveHskk, finishHskk, failHskk } = vi.hoisted(() => ({ createClient: vi.fn(), recognize: vi.fn(), model: vi.fn(), saveAudio: vi.fn(), validate: vi.fn(), quota: vi.fn(), reserveHskk: vi.fn(), finishHskk: vi.fn(), failHskk: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: createClient }))
 vi.mock('@/lib/ai/volcengine-asr', () => ({ recognizeSpeech: recognize }))
 vi.mock('@/lib/ai/deepseek', () => ({ getHSKKScore: model }))
 vi.mock('@/lib/ai/prompts', () => ({ buildHSKKPrompt: () => 'Transcript-only assessment' }))
-vi.mock('@/lib/subscription/tier', () => ({ getSubscriptionContext: async () => ({ features: { dubbing: { allowed: true } } }), consumeQuota: async () => ({ ok: true }) }))
-vi.mock('@/lib/practice/request', () => ({ validateAudioFile: () => ({ ok: true, format: 'wav', file: { arrayBuffer: async () => new ArrayBuffer(100) } }) }))
+vi.mock('@/lib/subscription/tier', () => ({ getSubscriptionContext: async () => ({ features: { dubbing: { allowed: true } } }), consumeQuota: quota }))
+vi.mock('@/lib/practice/request', () => ({ validateAudioFile: validate }))
 vi.mock('@/lib/practice/scoring', () => import('./scoring'))
 vi.mock('@/lib/practice/hskk-scoring', () => import('./hskk-scoring'))
 vi.mock('@/lib/hskk/content', () => ({ HSKK_CONTENT: [{ level: 'beginner', variant: 1, readAloud: { passage: '你好' }, qa: { questions: [{ question: '你好？' }] }, pictureDescription: { prompt: '描述' } }] }))
+vi.mock('@/lib/db/hskk-submission', () => ({ hskkFingerprint: () => 'fingerprint', reserveHskk, finishHskk, failHskk }))
 vi.mock('@/lib/db/verified-practice', () => ({ saveVerifiedAudioPractice: saveAudio }))
 import { POST as perform } from '../../app/api/dubbing/perform/route'
 import { POST as practice } from '../../app/api/dubbing/practice/route'
@@ -36,8 +38,24 @@ function setup(failedSave = -1) {
 const request = () => ({ formData: async () => new Map<string, unknown>([['clip_id', 'clip'], ['line_index', '0'], ['level', 'beginner'], ['test_variant', '1']]) }) as unknown as NextRequest
 beforeEach(() => {
   vi.clearAllMocks()
+  validate.mockReturnValue({ ok: true, format: 'wav', file: { arrayBuffer: async () => encodeWAV(new Float32Array(16000)).arrayBuffer() } })
+  quota.mockResolvedValue({ ok: true })
+  reserveHskk.mockResolvedValue({ state: 'reserved', test_id: 'saved', lease_token: 'lease' })
+  finishHskk.mockResolvedValue(undefined)
+  failHskk.mockResolvedValue(undefined)
   recognize.mockResolvedValue({ text: '你好' })
   model.mockResolvedValue({ scores: { grammar: 60, vocabulary: 70, content: 80 }, major_issues: [], strengths: [], overall_feedback: 'Transcript feedback' })
+})
+describe('invalid practice audio', () => {
+  it.each([practice, perform, submit])('rejects malformed WAV without ASR, quota or score writes', async route => {
+    setup()
+    validate.mockReturnValue({ ok: true, format: 'wav', file: { arrayBuffer: async () => new ArrayBuffer(100) } })
+    expect((await route(request())).status).toBe(400)
+    expect(recognize).not.toHaveBeenCalled()
+    expect(quota).not.toHaveBeenCalled()
+    expect(reserveHskk).not.toHaveBeenCalled()
+    expect(saveAudio).not.toHaveBeenCalled()
+  })
 })
 describe('dubbing transcript matching routes', () => {
   it.each([practice, perform])('returns transcript matching without acoustic scores', async route => {
@@ -68,7 +86,8 @@ describe('HSKK submission failure handling', () => {
     recognize.mockResolvedValueOnce({ text })
     expect((await submit(request())).status).toBe(422)
     expect(model).not.toHaveBeenCalled()
-    expect(db.from).not.toHaveBeenCalledWith('hskk_tests')
+    expect(finishHskk).not.toHaveBeenCalled()
+    expect(failHskk).toHaveBeenCalled()
   })
   it('does not turn ASR outages into scoreable placeholder text', async () => {
     setup()
@@ -76,15 +95,33 @@ describe('HSKK submission failure handling', () => {
     expect((await submit(request())).status).toBe(500)
     expect(model).not.toHaveBeenCalled()
   })
-  it.each([0, 1, 2])('propagates database failure at write %i', async failedSave => {
-    setup(failedSave)
+  it('propagates failed report persistence', async () => {
+    setup()
+    finishHskk.mockRejectedValueOnce(new Error('DB unavailable'))
     expect((await submit(request())).status).toBe(500)
+    expect(failHskk).toHaveBeenCalled()
+  })
+  it('replays a completed submission without ASR or another quota reservation', async () => {
+    setup()
+    const cached = { test_id: 'saved', total_score: 70 }
+    reserveHskk.mockResolvedValue({ state: 'completed', response: cached })
+    const result = await submit(request())
+    expect(await result.json()).toEqual(cached)
+    expect(recognize).not.toHaveBeenCalled()
+    expect(model).not.toHaveBeenCalled()
+    expect(quota).not.toHaveBeenCalled()
+  })
+  it.each([['processing', 409], ['quota_denied', 429]])('rejects reservation state %s', async (state, status) => {
+    setup()
+    reserveHskk.mockResolvedValue({ state })
+    expect((await submit(request())).status).toBe(status)
+    expect(recognize).not.toHaveBeenCalled()
   })
   it('rejects out-of-range model output and marks test failed', async () => {
     const db = setup()
     model.mockResolvedValue({ scores: { grammar: 999 } })
     expect((await submit(request())).status).toBe(500)
-    expect(db.saves[2].update).toHaveBeenCalledWith({ status: 'failed' })
+    expect(failHskk).toHaveBeenCalledWith('profile', 'fingerprint', 'lease')
   })
   it('saves and returns only validated content dimensions', async () => {
     const db = setup()
@@ -94,6 +131,6 @@ describe('HSKK submission failure handling', () => {
     expect(body.scores).toEqual({ grammar: 60, vocabulary: 70, content: 80, pronunciation: null, fluency: null })
     expect(body.total_score).toBe(70)
     expect(body.predicted_pass).toBeNull()
-    expect(db.saves[2].update).toHaveBeenCalledWith(expect.objectContaining({ pronunciation_score: null, fluency_score: null, status: 'completed' }))
+    expect(finishHskk).toHaveBeenCalledWith('profile', 'fingerprint', 'lease', expect.objectContaining({ scores: expect.objectContaining({ pronunciation: null, fluency: null }) }), expect.any(Array))
   })
 })

@@ -1,8 +1,8 @@
 /** Validate actual PCM bytes, not a caller-controlled extension or MIME type. */
-export function validateConversationWav(buffer: ArrayBuffer):
+export function validateConversationWav(buffer: ArrayBuffer, maxDurationSeconds = 120):
   | { ok: true; durationSeconds: number }
   | { ok: false; error: string } {
-  const fail = () => ({ ok: false as const, error: 'Use a valid WAV recording: 16 kHz, mono, 16-bit PCM, 0.3–120 seconds.' })
+  const fail = () => ({ ok: false as const, error: `Use a valid WAV recording: 16 kHz, mono, 16-bit PCM, 0.3–${maxDurationSeconds} seconds.` })
   if (buffer.byteLength < 44 || buffer.byteLength > 8 * 1024 * 1024) return fail()
   const view = new DataView(buffer)
   const tag = (offset: number) => String.fromCharCode(...new Uint8Array(buffer, offset, 4))
@@ -31,6 +31,6 @@ export function validateConversationWav(buffer: ArrayBuffer):
     offset = start + size + (size % 2)
   }
   const durationSeconds = dataBytes / 32000
-  if (offset !== buffer.byteLength || !formatFound || !dataFound || durationSeconds < 0.3 || durationSeconds > 120) return fail()
+  if (offset !== buffer.byteLength || !formatFound || !dataFound || durationSeconds < 0.3 || durationSeconds > maxDurationSeconds) return fail()
   return { ok: true, durationSeconds }
 }
