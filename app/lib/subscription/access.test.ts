@@ -26,3 +26,10 @@ describe('getEffectivePlan', () => {
     expect(getEffectivePlan({ plan: 'unexpected', status: 'active' })).toBe('free')
   })
 })
+
+
+it('expires scheduled cancellation without waiting for a webhook', () => {
+  expect(getEffectivePlan({ plan: 'plus', status: 'active', cancel_at_period_end: true, current_period_end: '2000-01-01T00:00:00Z' })).toBe('free')
+  expect(getEffectivePlan({ plan: 'plus', status: 'active', cancel_at_period_end: true, current_period_end: '2999-01-01T00:00:00Z' })).toBe('plus')
+  expect(getEffectivePlan({ plan: 'plus', status: 'active', cancel_at_period_end: true, current_period_end: 'invalid' })).toBe('free')
+})

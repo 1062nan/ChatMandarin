@@ -25,7 +25,7 @@ export default async function SettingsPage() {
 
   const { data: subscription } = await supabase
     .from('subscriptions')
-    .select('plan, status, current_period_end, cancel_at_period_end')
+    .select('plan, status, current_period_end, cancel_at_period_end, provider_subscription_id, payment_provider')
     .eq('user_id', profile.id)
     .maybeSingle()
 
@@ -41,6 +41,7 @@ export default async function SettingsPage() {
       />
       <UpgradeSection
         currentPlan={effectivePlan}
+        hasPaidSubscription={Boolean(subscription?.provider_subscription_id && subscription?.payment_provider === 'creem' && subscription?.status !== 'expired')}
         paymentsAvailable={isCreemPaymentsAvailable()}
         cancelAtPeriodEnd={subscription?.cancel_at_period_end || false}
         currentPeriodEnd={subscription?.current_period_end || null}

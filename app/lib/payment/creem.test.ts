@@ -15,6 +15,7 @@ describe('Creem webhook handling', () => {
   })
 
   it('extracts canonical subscription metadata from nested events', () => {
+    vi.stubEnv('CREEM_PRO_PRODUCT_ID', 'prod_pro')
     expect(parseCreemEvent({
       id: 'evt_2',
       eventType: 'subscription.active',
@@ -23,6 +24,7 @@ describe('Creem webhook handling', () => {
         customer: { email: 'learner@example.com' },
         subscription: {
           id: 'sub_1',
+          product: 'prod_pro',
           status: 'active',
           current_period_end_date: '2026-09-01T00:00:00Z',
           metadata: { user_id: 'profile_1', plan: 'pro' },
@@ -57,5 +59,16 @@ describe('Creem webhook handling', () => {
       subscriptionId: 'sub_refunded',
       eventCreatedAt: 1_728_734_351_631,
     })
+  })
+})
+
+
+describe('product validation', () => {
+  it('never grants a plan from metadata alone', () => {
+    expect(parseCreemEvent({ object: { metadata: { plan: 'pro' } } }).plan).toBeNull()
+  })
+  it('rejects inconsistent product and metadata', () => {
+    vi.stubEnv('CREEM_PLUS_PRODUCT_ID', 'prod_plus')
+    expect(parseCreemEvent({ object: { product: 'prod_plus', metadata: { plan: 'pro' } } }).plan).toBeNull()
   })
 })

@@ -19,10 +19,11 @@ export default function TermsPage() {
 
           <h2 className="text-lg font-semibold text-foreground">3. Free and Paid Plans</h2>
           <ul className="list-disc space-y-1 pl-6">
-            <li><strong>Free Plan:</strong> Limited to 5 minutes of AI conversation per day and 1 HSKK mock test per day.</li>
-            <li><strong>Plus Plan ($14.99/month):</strong> Unlimited conversation, all scenarios, HSKK mock tests (3/month).</li>
-            <li><strong>Pro Plan ($29/month):</strong> Everything in Plus, unlimited HSKK, detailed reports, priority AI.</li>
+            <li><strong>Free Plan:</strong> Limited to 5 minutes of AI conversation per day and 1 Speaking Practice (HSKK skills) session per day.</li>
+            <li><strong>Plus Plan ($14.99/month):</strong> Unlimited conversation, all scenarios, Speaking Practice (HSKK skills) sessions (3/month).</li>
+            <li><strong>Pro Plan ($29/month):</strong> Everything in Plus, unlimited Speaking Practice (HSKK skills) sessions and custom voice selection.</li>
           </ul>
+          <p>New paid checkout is temporarily unavailable pending billing verification. Existing subscription commitments remain unchanged; contact support for help with existing benefits. The current Plus speaking-practice allowance is 3 per month, not an increase over Free’s 1 per day. These exercises are not full official HSKK mock examinations.</p>
           <p>Subscription payments are processed by Creem (our Merchant of Record). You can cancel your subscription at any time. Cancellations take effect at the end of the current billing period.</p>
 
           <h2 className="text-lg font-semibold text-foreground">4. Refund Policy</h2>

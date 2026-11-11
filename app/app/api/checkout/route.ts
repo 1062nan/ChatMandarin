@@ -43,6 +43,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
+    const { data: subscription, error: subscriptionError } = await supabase
+      .from('subscriptions')
+      .select('provider_subscription_id, status, plan')
+      .eq('user_id', profile.id)
+      .maybeSingle()
+    if (subscriptionError) throw subscriptionError
+    if (subscription?.provider_subscription_id) {
+      return NextResponse.json({ error: 'An existing subscription must be managed before starting another checkout.' }, { status: 409 })
+    }
+    // New checkout remains feature-gated until provider sandbox tests and
+    // cross-request checkout reservation/reuse have passed release review.
     const { plan } = await request.json()
 
     if (plan !== 'plus' && plan !== 'pro') {

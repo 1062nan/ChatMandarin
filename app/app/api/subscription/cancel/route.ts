@@ -40,7 +40,8 @@ export async function POST() {
       `${getCreemApiBaseUrl()}/subscriptions/${subscription.provider_subscription_id}/cancel`,
       {
         method: 'POST',
-        headers: { 'Accept': 'application/json', 'x-api-key': apiKey },
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        body: JSON.stringify({ mode: 'scheduled', onExecute: 'cancel' }),
       }
     )
 
@@ -52,19 +53,21 @@ export async function POST() {
       )
     }
 
-    const result = await response.json().catch(() => ({})) as { current_period_end_date?: string }
-    const { error: updateError } = await supabase.from('subscriptions').update({
-      cancel_at_period_end: true,
-      current_period_end: result.current_period_end_date || subscription.current_period_end,
-      updated_at: new Date().toISOString(),
-    }).eq('id', subscription.id)
-    if (updateError) throw updateError
-
+    // The provider accepted the request. Only its verified webhook updates
+    // canonical entitlement; a user-session UPDATE is forbidden by RLS and
+    // would also race webhook ordering. Never report activation/cancellation
+    // as persisted just because an unselected UPDATE returned no error.
+    const { data: confirmed, error: readError } = await supabase.from('subscriptions')
+      .select('cancel_at_period_end, current_period_end')
+      .eq('id', subscription.id)
+      .maybeSingle()
+    const synced = !readError && confirmed?.cancel_at_period_end === true
     return NextResponse.json({
       success: true,
-      message: 'Subscription canceled. Access continues until the end of the billing period.',
-      current_period_end: result.current_period_end_date || subscription.current_period_end,
-    })
+      pendingSync: !synced,
+      message: synced ? 'Cancellation scheduled.' : 'Cancellation accepted; subscription status is syncing.',
+      current_period_end: synced ? confirmed.current_period_end : subscription.current_period_end,
+    }, { status: synced ? 200 : 202 })
   } catch (error) {
     console.error('Cancel subscription failed:', error)
     return NextResponse.json({ error: 'Failed to cancel subscription' }, { status: 500 })

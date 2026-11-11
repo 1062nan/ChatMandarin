@@ -8,7 +8,8 @@ const CREEM_PRO_PRODUCT_ID = process.env.CREEM_PRO_PRODUCT_ID
 
 export function isCreemPaymentsAvailable(): boolean {
   return Boolean(
-    CREEM_API_KEY
+    process.env.CREEM_CHECKOUT_ENABLED === 'true'
+    && CREEM_API_KEY
     && process.env.CREEM_WEBHOOK_SECRET
     && CREEM_PLUS_PRODUCT_ID
     && CREEM_PRO_PRODUCT_ID
@@ -109,6 +110,8 @@ export interface ParsedCreemEvent {
   eventId: string
   eventType: string
   eventCreatedAt: number | null
+  productId: string | null
+  mode: string | null
   userId: string | null
   customerEmail: string | null
   plan: PlanType | null
@@ -134,15 +137,18 @@ export function parseCreemEvent(event: unknown): ParsedCreemEvent {
   const customerValue = subscription.customer ?? object.customer
   const customer = asRecord(customerValue)
 
-  let plan = asString(metadata.plan) as PlanType | null
-  if (plan !== 'plus' && plan !== 'pro') plan = null
-  if (!plan && productId === CREEM_PLUS_PRODUCT_ID) plan = 'plus'
-  if (!plan && productId === CREEM_PRO_PRODUCT_ID) plan = 'pro'
+  const metadataPlan = asString(metadata.plan)
+  let plan: PlanType | null = null
+  if (productId && productId === process.env.CREEM_PLUS_PRODUCT_ID) plan = 'plus'
+  if (productId && productId === process.env.CREEM_PRO_PRODUCT_ID) plan = 'pro'
+  if (metadataPlan && metadataPlan !== plan) plan = null
 
   return {
     eventId: asString(root.id) || '',
     eventType: asString(root.eventType) || '',
     eventCreatedAt: asTimestamp(root.created_at),
+    productId,
+    mode: asString(subscription.mode) || asString(object.mode),
     userId: asString(metadata.user_id)
       || asString(metadata.userId)
       || asString(metadata.referenceId),

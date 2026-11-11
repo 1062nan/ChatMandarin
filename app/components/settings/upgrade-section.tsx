@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils/cn'
 interface UpgradeSectionProps {
   currentPlan: string
   paymentsAvailable: boolean
+  hasPaidSubscription?: boolean
   cancelAtPeriodEnd?: boolean
   currentPeriodEnd?: string | null
 }
@@ -27,7 +28,7 @@ const plans = [
       'Transcript-based feedback',
       '5 shadowing attempts / day',
       '20 active mistake cards',
-      '1 HSKK mock test / day'
+      '1 Speaking Practice (HSKK skills) session / day'
     ],
     cta: 'Current plan',
     disabled: true,
@@ -42,7 +43,7 @@ const plans = [
       'Unlimited AI conversation',
       'All scenarios',
       'Transcript-based grammar and vocabulary feedback',
-      'HSKK mock tests (3/month)',
+      'Speaking Practice (HSKK skills) sessions (3/month)',
       'Mistake journal with SRS',
       'Unlimited shadowing and dubbing practice'
     ],
@@ -57,7 +58,7 @@ const plans = [
     period: '/month',
     features: [
       'Everything in Plus',
-      'Unlimited HSKK mock tests',
+      'Unlimited Speaking Practice (HSKK skills) sessions',
       'Custom voice selection'
     ],
     cta: 'Upgrade to Pro',
@@ -69,6 +70,7 @@ const plans = [
 export function UpgradeSection({
   currentPlan,
   paymentsAvailable,
+  hasPaidSubscription = false,
   cancelAtPeriodEnd = false,
   currentPeriodEnd = null,
 }: UpgradeSectionProps) {
@@ -78,7 +80,7 @@ export function UpgradeSection({
 
   const upgraded = searchParams.get('upgraded') === 'true'
   useEffect(() => {
-    if (upgraded) toast.success('Payment received. Your subscription will activate shortly.')
+    if (upgraded) toast.info('Checkout returned. Your plan below reflects the latest confirmed subscription status; payment may still be processing.')
   }, [upgraded])
 
   async function handleUpgrade(plan: string) {
@@ -87,6 +89,10 @@ export function UpgradeSection({
       return
     }
 
+    if (hasPaidSubscription || currentPlan !== 'free') {
+      toast.info('You already have a paid plan. Contact support to change it without creating a second subscription.')
+      return
+    }
     setLoadingPlan(plan)
     try {
       const res = await fetch('/api/checkout', {
@@ -115,7 +121,9 @@ export function UpgradeSection({
     try {
       const res = await fetch('/api/subscription/cancel', { method: 'POST' })
       if (!res.ok) throw new Error('Failed to cancel')
-      toast.success('Subscription canceled. Access continues until end of billing period.')
+      const result = await res.json()
+      if (result.pendingSync) toast.info('Cancellation accepted by the payment provider. The subscription status is still syncing.')
+      else toast.success('Cancellation scheduled. Access continues until the confirmed end of the billing period.')
       window.location.reload()
     } catch (error) {
       toast.error((error as Error).message)
@@ -139,6 +147,8 @@ export function UpgradeSection({
             Paid subscriptions are temporarily unavailable while payment provider verification is being completed.
           </p>
         )}
+
+        <p className="mb-4 text-sm text-muted-foreground">Current speaking-practice limits use different periods: Free includes 1 session per day, while Plus includes 3 per month. Plus does not currently increase this allowance. New checkout remains unavailable until the plan design and billing lifecycle are verified.</p>
 
         <div className="grid gap-4 sm:grid-cols-3">
           {plans.map((plan) => {
@@ -188,11 +198,11 @@ export function UpgradeSection({
                     variant={plan.highlight ? 'primary' : 'outline'}
                     size="sm"
                     className="w-full"
-                    disabled={loadingPlan !== null}
+                    disabled={loadingPlan !== null || (hasPaidSubscription || currentPlan !== 'free') || plan.id === 'free' || !paymentsAvailable}
                     onClick={() => handleUpgrade(plan.id)}
                   >
                     {loadingPlan === plan.id && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {paymentsAvailable ? plan.cta : 'Temporarily unavailable'}
+                    {!paymentsAvailable ? 'Temporarily unavailable' : (hasPaidSubscription || currentPlan !== 'free') ? 'Contact support to change plan' : plan.cta}
                   </Button>
                 )}
               </div>
@@ -200,7 +210,7 @@ export function UpgradeSection({
           })}
         </div>
 
-        {currentPlan !== 'free' && cancelAtPeriodEnd && (
+        {hasPaidSubscription && cancelAtPeriodEnd && (
           <div className="mt-4 border-t pt-4 text-sm text-muted-foreground">
             Cancellation scheduled
             {currentPeriodEnd
@@ -209,7 +219,7 @@ export function UpgradeSection({
           </div>
         )}
 
-        {currentPlan !== 'free' && !cancelAtPeriodEnd && (
+        {hasPaidSubscription && !cancelAtPeriodEnd && (
           <div className="mt-4 border-t pt-4">
             <Button
               variant="ghost"
