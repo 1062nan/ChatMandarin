@@ -38,3 +38,13 @@
 ## Profile privacy follow-on
 
 A metadata audit found a public SELECT policy on all profile columns, including email. `20261111015710_restrict_profile_reads.sql` replaces it with authenticated owner-only reads and removes anonymous SELECT access. Existing own-profile updates and server-side payment lookup remain authorized. No profile rows are deleted or rewritten. `supabase/tests/profile_read_isolation.sql` checks owner-only visibility and denied anonymous access inside rollback. The local database test includes two synthetic users to verify actual isolation.
+
+## Hosted migration record
+
+Verified on 2026-11-11 before application activation:
+
+- Local `20261111013749_verified_learning_progress.sql` was recorded remotely as `20261111061025` (`verified_learning_progress`).
+- Local `20261111013756_atomic_verified_conversations.sql` was recorded remotely as `20261111061051` (`atomic_verified_conversations`).
+- Local `20261111015710_restrict_profile_reads.sql` was recorded remotely as `20261111061259` (`restrict_profile_reads`).
+
+The hosted migration tool assigned its own timestamps. Reconcile this mapping and the historical baseline before using a future CLI `db push`; do not replay files solely because their local timestamps differ. Hosted rollback integration and post-apply role checks passed. The authorized test profile and progress hashes were unchanged. Private table/RPC grants, owner-only profile reads and denied anonymous profile access were verified separately from application readiness.
