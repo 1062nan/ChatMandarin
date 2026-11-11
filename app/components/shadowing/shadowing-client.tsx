@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
 import { Mic, MicOff, Loader2, Volume2, ChevronRight, RotateCcw } from 'lucide-react'
 import { AudioRecorder } from '@/lib/audio/wav-encoder'
+import { validateConversationWav } from '@/lib/audio/conversation-wav'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
@@ -40,6 +41,7 @@ export function ShadowingClient({ sentences, ttsVoice, initialSentenceId }: { se
   const [score, setScore] = useState<ScoreResult | null>(null)
   const [audioRecorder] = useState(() => new AudioRecorder())
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const processingRef = useRef(false)
 
   const current = sentences[currentIndex]
 
@@ -79,6 +81,29 @@ export function ShadowingClient({ sentences, ttsVoice, initialSentenceId }: { se
     }
   }, [audioRecorder])
 
+  const submitAudio = useCallback(async (blob: Blob) => {
+    if (!current || processingRef.current) return
+    processingRef.current = true
+    setProcessing(true)
+    try {
+      if (blob.size > 8 * 1024 * 1024) throw new Error('Audio file is too large (maximum 8 MB).')
+      const validation = validateConversationWav(await blob.arrayBuffer())
+      if (!validation.ok) throw new Error(validation.error)
+      const formData = new FormData()
+      formData.append('audio', blob, 'recording.wav')
+      formData.append('sentence_id', current.id)
+      const res = await fetch('/api/shadowing/score', { method: 'POST', body: formData })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Scoring failed')
+      setScore(data as ScoreResult)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to score')
+    } finally {
+      processingRef.current = false
+      setProcessing(false)
+    }
+  }, [current])
+
   const stopAndScore = useCallback(async () => {
     const result = await audioRecorder.stop()
     setIsRecording(false)
@@ -86,23 +111,8 @@ export function ShadowingClient({ sentences, ttsVoice, initialSentenceId }: { se
       toast.error('录音太短或没收到声音，请检查麦克风权限后重试')
       return
     }
-
-    setProcessing(true)
-    try {
-      const formData = new FormData()
-      formData.append('audio', result.blob, 'recording.wav')
-      formData.append('sentence_id', current.id)
-
-      const res = await fetch('/api/shadowing/score', { method: 'POST', body: formData })
-      if (!res.ok) throw new Error('Scoring failed')
-      const data: ScoreResult = await res.json()
-      setScore(data)
-    } catch {
-      toast.error('Failed to score')
-    } finally {
-      setProcessing(false)
-    }
-  }, [audioRecorder, current])
+    await submitAudio(result.blob)
+  }, [audioRecorder, submitAudio])
 
   const nextSentence = useCallback(() => {
     setScore(null)
@@ -244,6 +254,7 @@ export function ShadowingClient({ sentences, ttsVoice, initialSentenceId }: { se
             </div>
           )}
           <button
+            aria-label={isRecording ? 'Stop recording and score' : 'Record your repetition'}
             onClick={isRecording ? stopAndScore : startRecording}
             className={cn(
               'flex h-16 w-16 items-center justify-center rounded-full shadow-lg transition-all',
@@ -255,6 +266,19 @@ export function ShadowingClient({ sentences, ttsVoice, initialSentenceId }: { se
           <p className="text-sm text-muted-foreground">
             {isRecording ? 'Click to stop and score' : 'Click to record your repetition'}
           </p>
+          <div className="text-center text-sm">
+            <label htmlFor="shadowing-audio-upload" className="block text-muted-foreground">No microphone? Upload a recording</label>
+            <input id="shadowing-audio-upload" type="file" accept=".wav,audio/wav"
+              disabled={isRecording || processing}
+              className="mt-2 max-w-full text-xs"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) void submitAudio(file)
+              }}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">WAV · 16 kHz · mono · 16-bit PCM · 0.3–120 seconds. Selecting a file sends it for speech recognition and uses your practice allowance.</p>
+          </div>
         </div>
       )}
 

@@ -11,6 +11,7 @@ import { getSubscriptionContext, consumeQuota } from '@/lib/subscription/tier'
 import { comparePracticeTexts } from '@/lib/practice/scoring'
 import { saveVerifiedAudioPractice } from '@/lib/db/verified-practice'
 import { validateAudioFile } from '@/lib/practice/request'
+import { validateConversationWav } from '@/lib/audio/conversation-wav'
 
 export const runtime = 'nodejs'
 
@@ -50,6 +51,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sentence not found' }, { status: 404 })
     }
 
+    // Reject malformed WAV bytes before charging quota or calling ASR.
+    const audioBuffer = await audio.file.arrayBuffer()
+    if (audio.format === 'wav') {
+      const validation = validateConversationWav(audioBuffer)
+      if (!validation.ok) return NextResponse.json({ error: validation.error }, { status: 400 })
+    }
     const subCtx = await getSubscriptionContext(profile.id)
     const quotaCheck = await consumeQuota(subCtx, profile.id, 'shadowing')
     if (!quotaCheck.ok) {
@@ -65,7 +72,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ASR
-    const audioBuffer = await audio.file.arrayBuffer()
     const asrResult = await recognizeSpeech(audioBuffer, audio.format, 16000)
 
     if (!asrResult.text.trim()) {

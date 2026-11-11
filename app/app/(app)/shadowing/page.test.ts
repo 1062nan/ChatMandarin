@@ -6,7 +6,7 @@ vi.mock('@/components/shadowing/shadowing-client', () => ({ ShadowingClient: () 
 vi.mock('next/navigation', () => ({ notFound: () => { throw new Error('NOT_FOUND') } }))
 import ShadowingPage from './page'
 
-const selectedId = '11111111-1111-1111-1111-111111111111'
+const selectedId = 's031'
 const first = { id: '22222222-2222-2222-2222-222222222222', text_zh: '你好' }
 const selected = { id: selectedId, text_zh: '我想要一杯茶' }
 function query(data: unknown) {

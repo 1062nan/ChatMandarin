@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
+import { encodeWAV } from '../audio/wav-encoder'
 const mocks = vi.hoisted(() => ({ client: vi.fn(), asr: vi.fn(), quota: vi.fn(), context: vi.fn(), validate: vi.fn(), save: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: mocks.client }))
 vi.mock('@/lib/ai/volcengine-asr', () => ({ recognizeSpeech: mocks.asr }))
@@ -16,8 +17,16 @@ function setup(saveError: Error | null = null) {
   return mocks.save
 }
 function request() { const body = new FormData(); body.set('sentence_id', 's001'); body.set('original', '伪造目标'); return new NextRequest('https://example.test/api/shadowing/score', { method: 'POST', body }) }
-beforeEach(() => { vi.resetAllMocks(); mocks.validate.mockReturnValue({ ok: true, format: 'wav', file: { arrayBuffer: async () => new ArrayBuffer(100) } }); mocks.context.mockResolvedValue({ plan: 'free' }); mocks.quota.mockResolvedValue({ ok: true }); mocks.asr.mockResolvedValue({ text: '你好' }) })
+beforeEach(() => { vi.resetAllMocks(); mocks.validate.mockReturnValue({ ok: true, format: 'wav', file: { arrayBuffer: async () => encodeWAV(new Float32Array(16000)).arrayBuffer() } }); mocks.context.mockResolvedValue({ plan: 'free' }); mocks.quota.mockResolvedValue({ ok: true }); mocks.asr.mockResolvedValue({ text: '你好' }) })
 describe('shadowing transcript assessment', () => {
+  it('rejects renamed non-audio WAV bytes without consuming quota or invoking ASR', async () => {
+    setup()
+    mocks.validate.mockReturnValue({ ok: true, format: 'wav', file: { arrayBuffer: async () => new ArrayBuffer(100) } })
+    expect((await POST(request())).status).toBe(400)
+    expect(mocks.quota).not.toHaveBeenCalled()
+    expect(mocks.asr).not.toHaveBeenCalled()
+    expect(mocks.save).not.toHaveBeenCalled()
+  })
   it('uses canonical text and never reports acoustic scores', async () => {
     const insert = setup(); const response = await POST(request()); const result = await response.json()
     expect(response.status).toBe(200); expect(result.original).toBe('你好'); expect(result.transcript_match_score).toBe(100)

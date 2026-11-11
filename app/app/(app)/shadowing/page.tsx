@@ -35,7 +35,8 @@ export default async function ShadowingPage({
   const practiceSentences = sentences || []
   if (selectedId && !practiceSentences.some(item => item.id === selectedId)) {
     // Unit links can target a sentence beyond the generic list's level/20-item limit.
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(selectedId)) notFound()
+    // Seed content uses text IDs such as s031, not only UUIDs.
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(selectedId)) notFound()
     const { data: selected, error } = await supabase
       .from('shadowing_sentences')
       .select('*')
