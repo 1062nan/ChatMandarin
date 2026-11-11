@@ -133,6 +133,7 @@ Assess only grammar, vocabulary and task content visible in the transcript, each
 You have no audio: do not assess pronunciation, tones, fluency, pauses, rhythm or emotion.
 Do not predict passing, claim official scoring, or make acoustic claims in any feedback.
 ASR can make mistakes, so describe transcript issues rather than definite speaking errors.
+ASR formatting is not a language error: Arabic and Chinese numerals with the same value (20/二十, 6/六), punctuation and spacing are equivalent. Never deduct points or list these formatting differences as issues or improvements.
 Return ONLY JSON:
 {
   "scores": { "grammar": 0, "vocabulary": 0, "content": 0 },
