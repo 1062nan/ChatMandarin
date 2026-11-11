@@ -16,7 +16,7 @@ export async function onRequestGet({ request, env }) {
   if (!token || token !== (env.ADMIN_TOKEN || '')) {
     return new Response('Unauthorized', {
       status: 401,
-      headers: { 'WWW-Authenticate': 'Bearer' }
+      headers: { 'WWW-Authenticate': 'Bearer', 'Cache-Control': 'no-store' }
     });
   }
 
@@ -27,32 +27,43 @@ export async function onRequestGet({ request, env }) {
   const format = url.searchParams.get('format') || 'json';
 
   // 列出所有 email: 开头的 key
-  const list = await env.WAITLIST.list({ prefix: 'email:' });
   const records = [];
-
-  for (const key of list.keys) {
-    const value = await env.WAITLIST.get(key.name);
-    if (value) {
+  let cursor;
+  do {
+    const page = await env.WAITLIST.list({ prefix: 'email:', ...(cursor ? { cursor } : {}) });
+    for (const key of page.keys) {
+      const value = await env.WAITLIST.get(key.name);
+      if (!value) continue;
       try {
-        records.push(JSON.parse(value));
-      } catch (e) {}
+        const record = JSON.parse(value);
+        if (record && typeof record === 'object' && typeof record.email === 'string') {
+          records.push(record);
+        }
+      } catch { /* Ignore malformed legacy records without exposing raw data. */ }
     }
-  }
+    if (page.list_complete) break;
+    if (!page.cursor || page.cursor === cursor) {
+      return new Response('Incomplete KV listing', { status: 503, headers: { 'Cache-Control': 'no-store' } });
+    }
+    cursor = page.cursor;
+  } while (true);
 
   // 按时间排序
-  records.sort((a, b) => a.timestamp - b.timestamp);
+  records.sort((a, b) => (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0));
 
   if (format === 'csv') {
     // 导出 CSV
     const header = 'email,hsk_level,country,timestamp,date\n';
     const rows = records.map(r => {
-      const date = new Date(r.timestamp).toISOString();
-      return `"${r.email}","${r.hsk_level || ''}","${r.country || ''}","${r.timestamp}","${date}"`;
+      const instant = new Date(r.timestamp);
+      const date = Number.isFinite(instant.getTime()) ? instant.toISOString() : '';
+      return [r.email, r.hsk_level, r.country, r.timestamp, date].map(csvCell).join(',');
     }).join('\n');
     return new Response(header + rows, {
       headers: {
         'Content-Type': 'text/csv',
-        'Content-Disposition': 'attachment; filename="chatmandarin-waitlist.csv"'
+        'Content-Disposition': 'attachment; filename="chatmandarin-waitlist.csv"',
+        'Cache-Control': 'no-store'
       }
     });
   }
@@ -62,6 +73,14 @@ export async function onRequestGet({ request, env }) {
     total: records.length,
     subscribers: records
   }, null, 2), {
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
   });
+}
+
+// CSV quoting alone does not prevent spreadsheet formulas. Neutralize dangerous
+// prefixes before quoting, including whitespace/control characters before them.
+function csvCell(value) {
+  let text = value == null ? '' : String(value);
+  if (/^[\s\u0000-\u001f]*[=+@-]/.test(text) || /^[\t\r\n]/.test(text)) text = "'" + text;
+  return '"' + text.replace(/"/g, '""') + '"';
 }

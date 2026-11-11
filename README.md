@@ -12,7 +12,7 @@ ChatMandarin/
 │   ├── package.json
 │   └── README.md         # app 本地启动详见此文档
 ├── landing/              # 静态 landing page（Cloudflare Pages）
-│   ├── index.html
+│   ├── public/            # 仅此目录作为公开静态资源
 │   ├── functions/        # Cloudflare Pages Functions（waitlist 等）
 │   └── wrangler.toml
 ├── docs/
@@ -41,8 +41,16 @@ npm run dev
 
 ```bash
 cd landing
-npx wrangler pages dev .
+npx wrangler pages dev public
 ```
+
+### 官网 API 回归检查
+
+```bash
+node --test tests/landing-api.test.mjs
+```
+
+Cloudflare Pages 的 Root directory 为 `landing`，输出目录由 `landing/wrangler.toml` 指定为 `public`。Functions 保留在 `landing/functions`，配置、测试和源码不放入公开资源目录。
 
 ### 文档协作
 

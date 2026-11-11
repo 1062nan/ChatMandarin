@@ -1,6 +1,6 @@
 name = "chatmandarin"
 compatibility_date = "2024-09-01"
-pages_build_output_dir = "."
+pages_build_output_dir = "./public"
 
 # KV 绑定（需要在 Cloudflare dashboard 先创建 WAITLIST namespace）
 [[kv_namespaces]]

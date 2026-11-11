@@ -22,7 +22,14 @@ export async function onRequestPost({ request, env }) {
     });
   }
 
-  const email = (body.email || '').trim().toLowerCase();
+  // Validate JSON types before using string methods. Invalid clients must not
+  // turn a public endpoint into an unhandled exception or write partial data.
+  if (!body || typeof body !== 'object' || Array.isArray(body) ||
+      typeof body.email !== 'string' ||
+      (body.hsk_level != null && typeof body.hsk_level !== 'string')) {
+    return Response.json({ ok: false, error: 'Invalid request fields' }, { status: 400 });
+  }
+  const email = body.email.trim().toLowerCase();
   const hskLevel = (body.hsk_level || '').trim().slice(0, 50);
 
   // 简单邮箱格式校验
@@ -37,7 +44,7 @@ export async function onRequestPost({ request, env }) {
   // 检查 KV 是否绑定
   if (!env.WAITLIST) {
     return new Response(JSON.stringify({ ok: false, error: 'KV not bound' }), {
-      status: 500,
+      status: 503,
       headers: { 'Content-Type': 'application/json' }
     });
   }
@@ -52,6 +59,11 @@ export async function onRequestPost({ request, env }) {
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
+  }
+
+  const previousCount = Number(await env.WAITLIST.get('meta:count') ?? '0');
+  if (!Number.isSafeInteger(previousCount) || previousCount < 0 || previousCount === Number.MAX_SAFE_INTEGER) {
+    return Response.json({ ok: false, error: 'Waitlist temporarily unavailable' }, { status: 503 });
   }
 
   // 存到 KV
@@ -71,9 +83,8 @@ export async function onRequestPost({ request, env }) {
   await env.WAITLIST.put(`email:${email}`, JSON.stringify(record));
   await env.WAITLIST.put(`idx:${timestamp}:${email}`, '1');
 
-  // 简单计数（用于显示总量）
-  let count = parseInt(await env.WAITLIST.get('meta:count') || '0', 10);
-  count = count + 1;
+  // Approximate display count only: KV does not provide atomic increments.
+  const count = previousCount + 1;
   await env.WAITLIST.put('meta:count', String(count));
 
   return new Response(JSON.stringify({
@@ -88,12 +99,18 @@ export async function onRequestPost({ request, env }) {
 // GET：返回当前订阅数（公开，仅数字）
 export async function onRequestGet({ request, env }) {
   if (!env.WAITLIST) {
-    return new Response(JSON.stringify({ count: 0 }), {
-      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+    return new Response(JSON.stringify({ error: 'Waitlist temporarily unavailable' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
     });
   }
-  const count = await env.WAITLIST.get('meta:count') || '0';
-  return new Response(JSON.stringify({ count: parseInt(count, 10) }), {
+  const count = Number(await env.WAITLIST.get('meta:count') ?? '0');
+  if (!Number.isSafeInteger(count) || count < 0) {
+    return Response.json({ error: 'Waitlist temporarily unavailable' }, {
+      status: 503, headers: { 'Cache-Control': 'no-store' }
+    });
+  }
+  return new Response(JSON.stringify({ count }), {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
