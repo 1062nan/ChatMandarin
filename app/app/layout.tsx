@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { Toaster } from 'sonner'
+import { publicMetadataBase } from '@/lib/metadata'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -13,13 +14,13 @@ export const metadata: Metadata = {
   description: 'The AI conversation tutor built specifically for HSK learners. Speak Mandarin from day 1 — HSK-graded conversation, speaking practice, AI practice feedback.',
   keywords: ['learn Chinese', 'HSK', 'Mandarin', 'AI tutor', 'Chinese speaking practice', 'HSKK'],
   authors: [{ name: 'ChatMandarin' }],
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://chatmandarin.cc'),
+  // Public metadata must not inherit local-development or preview callback configuration.
+  metadataBase: publicMetadataBase(),
   openGraph: {
     title: 'ChatMandarin — AI Chinese tutor for HSK learners',
     description: 'Speak Mandarin from day 1. HSK-graded AI conversation, speaking practice, AI practice feedback.',
     type: 'website',
     locale: 'en_US',
-    url: '/',
     siteName: 'ChatMandarin',
     images: ['/og-image.svg']
   },
@@ -33,9 +34,6 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
     googleBot: { index: true, follow: true }
-  },
-  alternates: {
-    canonical: '/'
   }
 }
 

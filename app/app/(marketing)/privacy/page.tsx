@@ -1,6 +1,10 @@
 import { Card, CardContent } from '@/components/ui/card'
 
-export const metadata = { title: 'Privacy Policy' }
+export const metadata = {
+  title: 'Privacy Policy',
+  alternates: { canonical: '/privacy' },
+  openGraph: { title: 'Privacy Policy · ChatMandarin', url: '/privacy' }
+}
 
 export default function PrivacyPage() {
   return (

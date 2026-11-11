@@ -1,6 +1,10 @@
 import { Card, CardContent } from '@/components/ui/card'
 
-export const metadata = { title: 'Terms of Service' }
+export const metadata = {
+  title: 'Terms of Service',
+  alternates: { canonical: '/terms' },
+  openGraph: { title: 'Terms of Service · ChatMandarin', url: '/terms' }
+}
 
 export default function TermsPage() {
   return (
