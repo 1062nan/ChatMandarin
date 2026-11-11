@@ -36,3 +36,35 @@ describe('mistake journal capacity', () => {
     expect(query.insert).toHaveBeenCalledTimes(1)
   })
 })
+
+import { reviewMistake, ReviewConflictError } from './mistakes'
+const due = { id: 'card', user_id: 'user', correct: '我昨天去', explanation: '', review_count: 4, consecutive_successes: 0, ease_factor: 2.5, interval_days: 1, next_review_at: '2020-01-01T00:00:00.000Z' }
+function reviewSetup(row = due, saved: object | null = { ...due, review_count: 5 }) {
+  const q: any = {}
+  for (const name of ['select', 'eq', 'lte', 'is', 'update']) q[name] = vi.fn(() => q)
+  q.single = vi.fn().mockResolvedValue({ data: row, error: null })
+  q.maybeSingle = vi.fn().mockResolvedValue({ data: saved, error: null })
+  mocks.client.mockResolvedValue({ from: vi.fn(() => q) })
+  return q
+}
+describe('due review write boundary', () => {
+  it('scopes read and compare-and-swap to owner and previous version', async () => {
+    const q = reviewSetup()
+    await reviewMistake('card', 4, 'user', 4)
+    expect(q.eq.mock.calls.filter(([key]: string[]) => key === 'user_id')).toEqual([['user_id', 'user'], ['user_id', 'user']])
+    expect(q.eq).toHaveBeenCalledWith('review_count', 4)
+    expect(q.eq).toHaveBeenCalledWith('next_review_at', due.next_review_at)
+    expect(q.update).toHaveBeenCalledWith(expect.objectContaining({ consecutive_successes: 1, mastered: false }))
+  })
+  it('rejects stale or future reviews without updating', async () => {
+    const q = reviewSetup({ ...due, next_review_at: '2099-01-01T00:00:00Z' })
+    await expect(reviewMistake('card', 4, 'user', 4)).rejects.toBeInstanceOf(ReviewConflictError)
+    expect(q.update).not.toHaveBeenCalled()
+    reviewSetup()
+    await expect(reviewMistake('card', 4, 'user', 3)).rejects.toBeInstanceOf(ReviewConflictError)
+  })
+  it('rejects a race loser instead of counting another success', async () => {
+    reviewSetup(due, null)
+    await expect(reviewMistake('card', 5, 'user', 4)).rejects.toBeInstanceOf(ReviewConflictError)
+  })
+})

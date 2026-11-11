@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getLearningPath } from '@/lib/db/learning-path'
 import { JourneyView } from './journey-view'
@@ -47,7 +48,6 @@ export default async function DashboardPage() {
     .select('correct, explanation')
     .eq('user_id', profile.id)
     .lte('next_review_at', new Date().toISOString())
-    .eq('mastered', false)
 
   const pendingMistakes = (pendingMistakeRows || []).filter(isReviewableMistake).length
 
@@ -63,6 +63,14 @@ export default async function DashboardPage() {
           {pendingMistakes ? ` · ${pendingMistakes} 个错题待复习` : ''}
         </p>
       </div>
+
+      {pendingMistakes > 0 && (
+        <div className="rounded-lg border border-jade/30 bg-jade/5 p-4">
+          <h2 className="font-semibold">先复习，再学新内容 · Recall before new practice</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{pendingMistakes} 个纠错卡片已到复习时间。先从记忆中表达，再核对答案。</p>
+          <Link href="/mistakes" className="mt-3 inline-block font-medium text-vermilion underline">开始一组复习 / Start a short review</Link>
+        </div>
+      )}
 
       {/* 推荐提示 */}
       {recommendation && (

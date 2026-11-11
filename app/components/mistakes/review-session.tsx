@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { toast } from 'sonner'
-import { Loader2, Eye, Check, X, RefreshCw, Sparkles } from 'lucide-react'
+import { Eye, Check, X, Sparkles } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils/cn'
@@ -18,6 +18,10 @@ type CardState = 'question' | 'revealed' | 'done'
 export function ReviewSession({ mistakes, onComplete }: ReviewSessionProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [cardState, setCardState] = useState<CardState>('question')
+  const pending = useRef(false)
+  const [attempt, setAttempt] = useState('')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [nextReviewAt, setNextReviewAt] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
   const [results, setResults] = useState<{ remembered: number; total: number }>({ remembered: 0, total: 0 })
 
@@ -28,35 +32,43 @@ export function ReviewSession({ mistakes, onComplete }: ReviewSessionProps) {
   }, [])
 
   const handleRate = useCallback(async (quality: number) => {
-    if (!current) return
+    if (!current || pending.current || cardState !== 'revealed') return
+    pending.current = true
+    setSaveError(null)
     setReviewing(true)
 
     try {
       const res = await fetch('/api/mistakes/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mistake_id: current.id, quality })
+        body: JSON.stringify({ mistake_id: current.id, quality, expected_review_count: current.review_count || 0 })
       })
 
-      if (!res.ok) throw new Error('Review failed')
+      const data = await res.json()
+      if (!res.ok) throw new Error(res.status === 409 ? 'This card was already reviewed or is not due. Return to the list to refresh.' : 'Your review was not saved. Please try again.')
+      setNextReviewAt(prev => !prev || data.next_review_at < prev ? data.next_review_at : prev)
 
       setResults(prev => ({
-        remembered: prev.remembered + (quality >= 3 ? 1 : 0),
+        remembered: prev.remembered + (quality >= 4 ? 1 : 0),
         total: prev.total + 1
       }))
 
       if (currentIndex < mistakes.length - 1) {
         setCurrentIndex(prev => prev + 1)
         setCardState('question')
+        setAttempt('')
       } else {
         setCardState('done')
       }
     } catch (err) {
-      toast.error('Failed to save review')
+      const message = err instanceof Error ? err.message : 'Your review was not saved. Please try again.'
+      setSaveError(message)
+      toast.error(message)
     } finally {
+      pending.current = false
       setReviewing(false)
     }
-  }, [current, currentIndex, mistakes.length])
+  }, [current, currentIndex, mistakes.length, cardState])
 
   // 完成
   if (cardState === 'done' || !current) {
@@ -70,7 +82,11 @@ export function ReviewSession({ mistakes, onComplete }: ReviewSessionProps) {
           <h2 className="mb-2 text-2xl font-bold">Review Complete!</h2>
           <p className="mb-4 text-muted-foreground">
             You reviewed {results.total} mistakes.<br />
-            Remembered {results.remembered} correctly ({pct}%).
+            You rated {results.remembered} as independently recalled ({pct}%).
+          </p>
+          <p className="mb-4 text-sm text-muted-foreground">
+            This is self-assessed recall, not a language proficiency score.
+            {nextReviewAt && <> Your earliest next review is {new Date(nextReviewAt).toLocaleDateString()}.</>}
           </p>
           <Button variant="primary" onClick={onComplete}>
             Back to Mistakes
@@ -130,6 +146,10 @@ export function ReviewSession({ mistakes, onComplete }: ReviewSessionProps) {
           {/* 正确答案（翻牌后显示） */}
           {cardState === 'revealed' ? (
             <>
+              {attempt.trim() && <div className="mb-4 rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">Your recalled answer (not saved)</p>
+                <p lang="zh" className="mt-1 whitespace-pre-wrap">{attempt}</p>
+              </div>}
               <div className="mb-6 animate-fade-in">
                 <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Correct</p>
                 <p className="cn-font text-2xl font-bold text-jade">{current.correct}</p>
@@ -143,7 +163,7 @@ export function ReviewSession({ mistakes, onComplete }: ReviewSessionProps) {
 
               {/* 回忆评分 */}
               <div>
-                <p className="mb-3 text-center text-sm text-muted-foreground">How well did you remember?</p>
+                <p className="mb-3 text-center text-sm text-muted-foreground">Rate your recall before you saw the answer. Using the answer is practice, not independent recall.</p>
                 <div className="grid grid-cols-4 gap-2">
                   <button
                     onClick={() => handleRate(0)}
@@ -183,8 +203,11 @@ export function ReviewSession({ mistakes, onComplete }: ReviewSessionProps) {
           ) : (
             <div className="flex flex-col items-center justify-center py-12">
               <p className="mb-4 text-center text-muted-foreground">
-                Try to remember the correct way to say this.
+                Correct this sentence from memory. Say it aloud or type your attempt before revealing the answer.
               </p>
+              <label htmlFor="recall-attempt" className="mb-2 self-start text-sm">Your attempt (optional, not saved)</label>
+              <textarea id="recall-attempt" value={attempt} onChange={event => setAttempt(event.target.value)}
+                className="mb-4 min-h-24 w-full rounded-md border bg-background p-3" lang="zh" />
               <Button variant="outline" size="lg" onClick={handleReveal}>
                 <Eye className="h-4 w-4" />
                 Show answer
@@ -194,9 +217,11 @@ export function ReviewSession({ mistakes, onComplete }: ReviewSessionProps) {
         </CardContent>
       </Card>
 
+      {saveError && <p role="alert" className="text-sm text-vermilion">{saveError}</p>}
+      <p className="text-xs text-muted-foreground">Spaced recall: a lapse returns the card to a short interval. Well-reviewed cards still return for maintenance.</p>
       {/* 跳过 */}
       <div className="text-center">
-        <Button variant="ghost" size="sm" onClick={onComplete}>
+        <Button variant="ghost" size="sm" onClick={onComplete} disabled={reviewing}>
           End review session
         </Button>
       </div>

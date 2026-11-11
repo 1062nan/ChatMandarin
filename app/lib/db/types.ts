@@ -97,6 +97,7 @@ export interface Mistake {
   scenario: string | null
   source_conversation_id: string | null
   review_count: number
+  consecutive_successes: number
   next_review_at: string
   ease_factor: number
   interval_days: number
