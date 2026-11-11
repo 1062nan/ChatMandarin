@@ -54,6 +54,9 @@ describe('conversation turn persistence contract', () => {
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(Object.values(body.scores)).toEqual([null, null, null, null])
+    expect(Object.keys(body.timing).sort()).toEqual(['asr_ms', 'persistence_ms', 'reply_ms', 'server_ms', 'tts_ms'])
+    for (const value of Object.values(body.timing)) expect(value).toEqual(expect.any(Number))
+    expect(body.timing.server_ms).toBeGreaterThanOrEqual(body.timing.asr_ms)
     expect(mocks.prompt).toHaveBeenCalledWith(expect.objectContaining({ scenarioId: 'real-scenario', hskLevel: 2 }))
   })
   it('returns failure when the learner turn was not saved', async () => {

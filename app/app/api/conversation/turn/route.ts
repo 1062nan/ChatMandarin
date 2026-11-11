@@ -40,6 +40,8 @@ export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
+  const measuredStart = performance.now()
+  const timing = { asr_ms: 0, reply_ms: 0, tts_ms: 0, persistence_ms: 0, server_ms: 0 }
 
   try {
     // 1. 鉴权
@@ -134,7 +136,9 @@ export async function POST(request: NextRequest) {
 
     let userText: string
     try {
+      const stageStart = performance.now()
       const asrResult = await recognizeSpeech(audioBuffer, audioFormat, 16000)
+      timing.asr_ms = Math.round(performance.now() - stageStart)
       userText = asrResult.text
       console.log('[conversation/turn] ASR completed:', {
         textLength: userText.length,
@@ -188,7 +192,9 @@ export async function POST(request: NextRequest) {
 
     let aiResponse
     try {
+      const stageStart = performance.now()
       aiResponse = await getConversationResponse(systemPrompt, chatMessages)
+      timing.reply_ms = Math.round(performance.now() - stageStart)
     } catch (llmError) {
       console.error('DeepSeek failed:', llmError)
       return NextResponse.json(
@@ -202,6 +208,7 @@ export async function POST(request: NextRequest) {
 
     // 9. TTS：AI 文字 → 语音
     let aiAudioBase64: string | null = null
+    const ttsStart = performance.now()
     try {
       const ttsResult = await synthesizeSpeech(aiResponse.reply, profile.tts_voice_type as any || 'BV700_streaming')
       aiAudioBase64 = ttsResult.audioBase64
@@ -210,9 +217,12 @@ export async function POST(request: NextRequest) {
       // TTS 失败不阻断流程（用户还能看文字）
     }
 
+    timing.tts_ms = Math.round(performance.now() - ttsStart)
+
     // 10. 保存到数据库
     const latencyMs = Date.now() - startTime
 
+    const persistenceStart = performance.now()
     let savedTurn: VerifiedTurn
     try {
       savedTurn = await saveConversationTurn({
@@ -251,11 +261,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    timing.persistence_ms = Math.round(performance.now() - persistenceStart)
+    timing.server_ms = Math.round(performance.now() - measuredStart)
     // 11. 返回结果
     return NextResponse.json({
       ...turnResponse(savedTurn, savedTurn.duplicate ? null : aiAudioBase64),
       ...(warnings.length ? { warning: warnings.join(' ') } : {}),
-      latency_ms: latencyMs
+      latency_ms: latencyMs,
+      timing
     })
   } catch (error) {
     console.error('Conversation turn failed:', error)

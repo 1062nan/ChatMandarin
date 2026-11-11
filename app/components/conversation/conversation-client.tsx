@@ -173,6 +173,7 @@ export function ConversationClient({
       formData.append('hsk_level', String(hskLevel))
       formData.append('correction_mode', correctionMode)
 
+      const requestStart = performance.now()
       const res = await fetch('/api/conversation/turn', {
         method: 'POST',
         body: formData
@@ -190,6 +191,8 @@ export function ConversationClient({
 
       const data = await res.json()
 
+      const requestMs = Math.round(performance.now() - requestStart)
+      if (data.timing) console.info('[conversation-timing]', JSON.stringify({ ...data.timing, turn: turnIndex + 1, request_ms: requestMs, playback_start_ms: null }))
       if (data.warning) toast.info(data.warning)
 
       // 添加用户消息
@@ -212,7 +215,9 @@ export function ConversationClient({
 
       // 播放 AI 音频
       if (data.ai_audio) {
-        playAudio(data.ai_audio)
+        playAudio(data.ai_audio).then(started => {
+          if (data.timing) console.info('[conversation-playback-timing]', JSON.stringify({ turn: turnIndex + 1, playback_start_ms: started ? Math.round(performance.now() - requestStart) : null }))
+        })
       }
 
       // 对话完成
@@ -295,10 +300,10 @@ export function ConversationClient({
   }
 
   // 播放音频
-  const playAudio = (base64: string) => {
-    if (!audioRef.current) return
+  const playAudio = async (base64: string): Promise<boolean> => {
+    if (!audioRef.current) return false
     audioRef.current.src = `data:audio/mp3;base64,${base64}`
-    audioRef.current.play().catch(() => {})
+    try { await audioRef.current.play(); return true } catch { return false }
   }
 
   // 结束对话并更新统计
