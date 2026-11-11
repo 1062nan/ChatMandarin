@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 const mocks = vi.hoisted(() => ({ client: vi.fn(), save: vi.fn(), history: vi.fn(), asr: vi.fn(), response: vi.fn(), mistakes: vi.fn(), prompt: vi.fn(), quota: vi.fn(), session: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseServerClient: mocks.client }))
-vi.mock('@/lib/db/conversations', () => ({ saveConversationTurn: mocks.save, getConversationTurns: mocks.history, getVerifiedConversation: mocks.session }))
+vi.mock('@/lib/db/conversations', () => ({ saveConversationTurn: mocks.save, getConversationContext: async (...args: unknown[]) => { const session = await mocks.session(...args); return session ? { session, turns: await mocks.history(...args) } : null } }))
 vi.mock('@/lib/ai/volcengine-asr', () => ({ recognizeSpeech: mocks.asr }))
 vi.mock('@/lib/ai/volcengine-tts', () => ({ synthesizeSpeech: async () => ({ audioBase64: null }) }))
 vi.mock('@/lib/ai/deepseek', () => ({ getConversationResponse: mocks.response }))
@@ -54,7 +54,7 @@ describe('conversation turn persistence contract', () => {
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(Object.values(body.scores)).toEqual([null, null, null, null])
-    expect(Object.keys(body.timing).sort()).toEqual(['asr_ms', 'persistence_ms', 'reply_ms', 'server_ms', 'tts_ms'])
+    expect(Object.keys(body.timing).sort()).toEqual(['asr_ms', 'auth_ms', 'context_ms', 'persistence_ms', 'profile_ms', 'quota_scenario_ms', 'reply_ms', 'server_ms', 'tts_ms'])
     for (const value of Object.values(body.timing)) expect(value).toEqual(expect.any(Number))
     expect(body.timing.server_ms).toBeGreaterThanOrEqual(body.timing.asr_ms)
     expect(mocks.prompt).toHaveBeenCalledWith(expect.objectContaining({ scenarioId: 'real-scenario', hskLevel: 2 }))
@@ -86,6 +86,18 @@ describe('conversation turn persistence contract', () => {
     const response = await POST(request())
     expect(response.status).toBe(200)
     expect((await response.json()).warning).toContain('mistake journal')
+  })
+  it('rejects unowned context before quota or recognition', async () => {
+    mocks.session.mockResolvedValueOnce(null)
+    expect((await POST(request())).status).toBe(409)
+    expect(mocks.quota).not.toHaveBeenCalled()
+    expect(mocks.asr).not.toHaveBeenCalled()
+  })
+  it('denies exhausted quota without recognition or persistence', async () => {
+    mocks.quota.mockResolvedValueOnce({ ok: false, remaining: { daily: 0 } })
+    expect((await POST(request())).status).toBe(429)
+    expect(mocks.asr).not.toHaveBeenCalled()
+    expect(mocks.save).not.toHaveBeenCalled()
   })
   it('rejects a closed session before consuming quota or saving another turn', async () => {
     mocks.session.mockResolvedValueOnce({ completed_at: 'yesterday' })

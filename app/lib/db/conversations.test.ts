@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { rpc, from } = vi.hoisted(() => ({ rpc: vi.fn(), from: vi.fn() }))
 vi.mock('@/lib/supabase/server', () => ({ createSupabaseAdmin: () => ({ rpc, from }) }))
-import { createConversation, endConversation, saveConversationTurn, getConversationTurns } from './conversations'
+import { createConversation, endConversation, saveConversationTurn, getConversationTurns, getConversationContext } from './conversations'
 beforeEach(() => vi.resetAllMocks())
 describe('atomic conversation persistence boundary', () => {
   it('starts the public row and trusted snapshot in one RPC', async () => {
@@ -29,6 +29,18 @@ describe('atomic conversation persistence boundary', () => {
     expect(args.p_turn).not.toHaveProperty('pronunciation_score')
     expect(args.p_turn).not.toHaveProperty('fluency_score')
     expect(args.p_profile_id).toBe('owner')
+  })
+  it('loads owned context with exactly one ownership query and ordered history', async () => {
+    const session = { conversation_id: 'session', user_id: 'owner' }
+    const owner:any = { select: () => owner, eq: vi.fn(() => owner), maybeSingle: async () => ({ data: session }) }
+    const turns:any = { select: () => turns, eq: vi.fn(() => turns), order: vi.fn(async () => ({ data: [{ turn_data: { turn_index: 0, user_text: '你好' } }] })) }
+    from.mockImplementation(table => table === 'verified_conversation_sessions' ? owner : turns)
+    const result = await getConversationContext('session', 'owner')
+    expect(result).toEqual({ session, turns: [{ turn_index: 0, user_text: '你好' }] })
+    expect(from.mock.calls.map(call => call[0])).toEqual(['verified_conversation_sessions', 'verified_conversation_turns'])
+    expect(owner.eq).toHaveBeenCalledWith('user_id', 'owner')
+    expect(owner.eq).toHaveBeenCalledWith('verified', true)
+    expect(turns.eq).toHaveBeenCalledWith('conversation_id', 'session')
   })
   it('does not read trusted turns before verifying the session owner', async () => {
     const q:any={select:()=>q,eq:vi.fn(()=>q),maybeSingle:async()=>({data:null})}

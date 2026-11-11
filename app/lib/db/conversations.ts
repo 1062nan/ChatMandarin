@@ -25,13 +25,20 @@ export async function getVerifiedConversation(conversationId: string, userId: st
   return data as VerifiedConversation | null
 }
 
-export async function getConversationTurns(conversationId: string, userId: string): Promise<VerifiedTurn[]> {
+/** One ownership check supplies both the immutable session and its protected history. */
+export async function getConversationContext(conversationId: string, userId: string): Promise<{ session: VerifiedConversation; turns: VerifiedTurn[] } | null> {
   const session = await getVerifiedConversation(conversationId, userId)
-  if (!session) throw new Error('Verified conversation not owned')
+  if (!session) return null
   const { data, error } = await createSupabaseAdmin().from('verified_conversation_turns')
     .select('turn_data').eq('conversation_id', conversationId).order('turn_index', { ascending: true })
   if (error) throw error
-  return (data || []).map((row: { turn_data: unknown }) => row.turn_data as VerifiedTurn)
+  return { session, turns: (data || []).map((row: { turn_data: unknown }) => row.turn_data as VerifiedTurn) }
+}
+
+export async function getConversationTurns(conversationId: string, userId: string): Promise<VerifiedTurn[]> {
+  const context = await getConversationContext(conversationId, userId)
+  if (!context) throw new Error('Verified conversation not owned')
+  return context.turns
 }
 
 export async function saveConversationTurn(opts: {

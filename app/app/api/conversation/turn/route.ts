@@ -28,7 +28,7 @@ import { synthesizeSpeech } from '@/lib/ai/volcengine-tts'
 import { getConversationResponse } from '@/lib/ai/deepseek'
 import { buildConversationPrompt } from '@/lib/ai/prompts'
 import type { ChatMessage } from '@/lib/ai/deepseek'
-import { saveConversationTurn, getConversationTurns, getVerifiedConversation, type VerifiedTurn } from '@/lib/db/conversations'
+import { saveConversationTurn, getConversationContext, type VerifiedTurn } from '@/lib/db/conversations'
 import { createMistakesFromErrors } from '@/lib/db/mistakes'
 import { analyzeAudio } from '@/lib/audio/analyze'
 import { getSubscriptionContext, consumeConversationSeconds } from '@/lib/subscription/tier'
@@ -41,13 +41,15 @@ export const maxDuration = 60
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   const measuredStart = performance.now()
-  const timing = { asr_ms: 0, reply_ms: 0, tts_ms: 0, persistence_ms: 0, server_ms: 0 }
+  const timing = { auth_ms: 0, profile_ms: 0, context_ms: 0, quota_scenario_ms: 0, asr_ms: 0, reply_ms: 0, tts_ms: 0, persistence_ms: 0, server_ms: 0 }
 
   try {
+    const authStart = performance.now()
     // 1. 鉴权
     const supabase = await createSupabaseServerClient()
     const { data: { user } } = await supabase.auth.getUser()
 
+    timing.auth_ms = Math.round(performance.now() - authStart)
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -68,6 +70,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const profileStart = performance.now()
     // 3. 获取用户 profile
     const { data: profile } = await supabase
       .from('profiles')
@@ -75,14 +78,17 @@ export async function POST(request: NextRequest) {
       .eq('auth_id', user.id)
       .single()
 
+    timing.profile_ms = Math.round(performance.now() - profileStart)
     if (!profile) {
       return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
 
     // Use protected settings and history, never the client-editable legacy rows.
-    const conv = await getVerifiedConversation(conversationId, profile.id)
-    if (!conv) return NextResponse.json({ error: 'Please start a new conversation.' }, { status: 409 })
-    const history = await getConversationTurns(conversationId, profile.id)
+    const contextStart = performance.now()
+    const context = await getConversationContext(conversationId, profile.id)
+    timing.context_ms = Math.round(performance.now() - contextStart)
+    if (!context) return NextResponse.json({ error: 'Please start a new conversation.' }, { status: 409 })
+    const { session: conv, turns: history } = context
     const existingTurn = history.find(turn => turn.turn_index === turnIndex)
     if (existingTurn) return NextResponse.json(turnResponse(existingTurn, null))
     if (conv.completed_at) return NextResponse.json({ error: 'Conversation has already ended' }, { status: 409 })
@@ -91,13 +97,20 @@ export async function POST(request: NextRequest) {
     const hskLevel = conv.hsk_level
     const correctionMode = conv.correction_mode
 
-    const subCtx = await getSubscriptionContext(profile.id)
     const audioBuffer = await audio.file.arrayBuffer()
     const wav = validateConversationWav(audioBuffer)
     if (!wav.ok) return NextResponse.json({ error: wav.error }, { status: 400 })
     const audioDurationSeconds = Math.ceil(wav.durationSeconds)
-    const convQuota = await consumeConversationSeconds(profile.id, audioDurationSeconds)
+    // Both operations follow authentication, ownership and audio validation.
+    // Quota remains atomic; the parallel operation only reads canonical content.
+    const quotaScenarioStart = performance.now()
+    const [convQuota, scenarioResult] = await Promise.all([
+      consumeConversationSeconds(profile.id, audioDurationSeconds),
+      supabase.from('scenarios').select('*').eq('id', scenarioId).eq('is_active', true).single(),
+    ])
+    timing.quota_scenario_ms = Math.round(performance.now() - quotaScenarioStart)
     if (!convQuota.ok) {
+      const subCtx = await getSubscriptionContext(profile.id)
       return NextResponse.json(
         {
           error: 'Daily conversation limit reached (5 min for free tier). Upgrade for unlimited.',
@@ -110,12 +123,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. 获取场景数据
-    const { data: scenario } = await supabase
-      .from('scenarios')
-      .select('*')
-      .eq('id', scenarioId)
-      .eq('is_active', true)
-      .single()
+    const { data: scenario, error: scenarioError } = scenarioResult
+    if (scenarioError) throw scenarioError
 
     if (!scenario) {
       return NextResponse.json({ error: 'Scenario not found' }, { status: 404 })
