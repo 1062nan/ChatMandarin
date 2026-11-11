@@ -28,10 +28,11 @@ import { synthesizeSpeech } from '@/lib/ai/volcengine-tts'
 import { getConversationResponse } from '@/lib/ai/deepseek'
 import { buildConversationPrompt } from '@/lib/ai/prompts'
 import type { ChatMessage } from '@/lib/ai/deepseek'
-import { saveConversationTurn, getConversationContext, type VerifiedTurn } from '@/lib/db/conversations'
+import { getConversationContext, type VerifiedTurn } from '@/lib/db/conversations'
 import { createMistakesFromErrors } from '@/lib/db/mistakes'
 import { analyzeAudio } from '@/lib/audio/analyze'
-import { getSubscriptionContext, consumeConversationSeconds } from '@/lib/subscription/tier'
+import { getSubscriptionContext } from '@/lib/subscription/tier'
+import { conversationFingerprint, reserveConversation, finishConversation, failConversation } from '@/lib/db/conversation-submission'
 import { validateAudioFile } from '@/lib/practice/request'
 import { validateConversationWav } from '@/lib/audio/conversation-wav'
 
@@ -41,6 +42,7 @@ export const maxDuration = 60
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
   const measuredStart = performance.now()
+  let activeLease: { profileId: string; conversationId: string; turnIndex: number; lease: string } | null = null
   const timing = { auth_ms: 0, profile_ms: 0, context_ms: 0, quota_scenario_ms: 0, asr_ms: 0, reply_ms: 0, tts_ms: 0, persistence_ms: 0, server_ms: 0 }
 
   try {
@@ -104,23 +106,24 @@ export async function POST(request: NextRequest) {
     // Both operations follow authentication, ownership and audio validation.
     // Quota remains atomic; the parallel operation only reads canonical content.
     const quotaScenarioStart = performance.now()
-    const [convQuota, scenarioResult] = await Promise.all([
-      consumeConversationSeconds(profile.id, audioDurationSeconds),
+    const [reservationResult, scenarioRead] = await Promise.allSettled([
+      reserveConversation(supabase, profile.id, conversationId, turnIndex, conversationFingerprint(audioBuffer), audioDurationSeconds),
       supabase.from('scenarios').select('*').eq('id', scenarioId).eq('is_active', true).single(),
     ])
     timing.quota_scenario_ms = Math.round(performance.now() - quotaScenarioStart)
-    if (!convQuota.ok) {
+    if (reservationResult.status === 'rejected') throw reservationResult.reason
+    const reservation = reservationResult.value
+    if (reservation.state === 'completed' && reservation.turn_data) return NextResponse.json(turnResponse(reservation.turn_data, null))
+    if (reservation.state === 'processing') return NextResponse.json({ error: 'This recording is still processing. Please retry shortly.' }, { status: 409, headers: { 'Retry-After': '5' } })
+    if (reservation.state === 'conflict') return NextResponse.json({ error: 'The conversation changed. Please start a new conversation.' }, { status: 409 })
+    if (reservation.state === 'quota_denied') {
       const subCtx = await getSubscriptionContext(profile.id)
-      return NextResponse.json(
-        {
-          error: 'Daily conversation limit reached (5 min for free tier). Upgrade for unlimited.',
-          upgrade_required: true,
-          remaining: convQuota.remaining,
-          plan: subCtx.plan,
-        },
-        { status: 429 }
-      )
+      return NextResponse.json({ error: 'Daily conversation limit reached (5 min for free tier). Upgrade for unlimited.', upgrade_required: true, remaining: { daily: reservation.daily_remaining }, plan: subCtx.plan }, { status: 429 })
     }
+    if (reservation.state !== 'reserved' || !reservation.lease_token) throw new Error('Invalid conversation lease')
+    activeLease = { profileId: profile.id, conversationId, turnIndex, lease: reservation.lease_token }
+    if (scenarioRead.status === 'rejected') throw scenarioRead.reason
+    const scenarioResult = scenarioRead.value
 
     // 5. 获取场景数据
     const { data: scenario, error: scenarioError } = scenarioResult
@@ -234,7 +237,7 @@ export async function POST(request: NextRequest) {
     const persistenceStart = performance.now()
     let savedTurn: VerifiedTurn
     try {
-      savedTurn = await saveConversationTurn({
+      savedTurn = await finishConversation(reservation.lease_token, {
         userId: profile.id,
         conversationId,
         turnIndex,
@@ -247,6 +250,7 @@ export async function POST(request: NextRequest) {
         conversationComplete: aiResponse.conversation_complete,
         encouragement: aiResponse.encouragement
       })
+      activeLease = null
 
     } catch (dbError) {
       console.error('Database save failed:', dbError)
@@ -285,6 +289,11 @@ export async function POST(request: NextRequest) {
       { error: 'Internal server error', details: (error as Error).message },
       { status: 500 }
     )
+  } finally {
+    if (activeLease) {
+      try { await failConversation(activeLease.profileId, activeLease.conversationId, activeLease.turnIndex, activeLease.lease) }
+      catch (error) { console.error('Conversation lease release failed:', error) }
+    }
   }
 }
 

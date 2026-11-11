@@ -52,6 +52,8 @@ export function ConversationClient({
   const [error, setError] = useState<string | null>(null)
   const [audioRecorder] = useState(() => new AudioRecorder())
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const lastRecording = useRef<Blob | null>(null)
+  const submitting = useRef(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // 录音期间累计最大音量（用于检测静音）
@@ -160,7 +162,9 @@ export function ConversationClient({
   }, [conversationId, state, audioRecorder])
 
   const submitAudio = useCallback(async (blob: Blob) => {
-    if (!conversationId) return
+    if (!conversationId || submitting.current) return
+    submitting.current = true
+    lastRecording.current = blob
     setError(null)
     setState('processing')
 
@@ -191,6 +195,7 @@ export function ConversationClient({
 
       const data = await res.json()
 
+      lastRecording.current = null
       const requestMs = Math.round(performance.now() - requestStart)
       if (data.timing) console.info('[conversation-timing]', JSON.stringify({ ...data.timing, turn: turnIndex + 1, request_ms: requestMs, playback_start_ms: null }))
       if (data.warning) toast.info(data.warning)
@@ -233,7 +238,7 @@ export function ConversationClient({
     } catch (err) {
       setState('idle')
       setError((err as Error).message || 'Something went wrong. Please try again.')
-    }
+    } finally { submitting.current = false }
   }, [conversationId, turnIndex, scenarioId, hskLevel, correctionMode, router])
 
   // 停止录音 → 发送处理
@@ -440,7 +445,9 @@ export function ConversationClient({
       {error && (
         <div className="mb-4 flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          {error}
+          <div><p>{error}</p>
+            {lastRecording.current && state === 'idle' && !isEnding && <Button variant="outline" size="sm" className="mt-2" onClick={() => { if (lastRecording.current) void submitAudio(lastRecording.current) }}>Retry last recording</Button>}
+          </div>
         </div>
       )}
 
