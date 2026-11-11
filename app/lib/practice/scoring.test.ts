@@ -7,6 +7,15 @@ import {
 } from './scoring'
 
 describe('practice scoring', () => {
+  it.each([['6', '六'], ['16', '十六'], ['100', '一百'], ['2026', '二零二六'], ['2', '两'], ['10000', '一万']])('accepts equivalent ASR numeral forms %s and %s', (digit, chinese) => {
+    const result = comparePracticeTexts(`我每天早上${digit}点起床。`, `我每天早上${chinese}点起床。`)
+    expect(result.accuracyScore).toBe(100)
+    expect(result.errors).toEqual([])
+    expect(result.charByChar.some(char => char.char === chinese && char.correct)).toBe(true)
+  })
+  it('still penalizes different spoken numbers', () => {
+    expect(comparePracticeTexts('七点', '6点').accuracyScore).toBeLessThan(100)
+  })
   it('does not grant full credit to an empty target', () => {
     expect(comparePracticeTexts('', '').accuracyScore).toBe(0)
     expect(comparePracticeTexts('你好', '……').accuracyScore).toBe(0)

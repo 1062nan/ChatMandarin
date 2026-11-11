@@ -17,13 +17,40 @@ export function normalizePracticeText(value: string): string {
   return value.replace(STRIPPED_PUNCTUATION, '')
 }
 
+const CHINESE_DIGITS: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
+
+function chineseInteger(text: string): number {
+  for (const [unit, multiplier] of [['亿', 100000000], ['万', 10000]] as const) {
+    const index = text.indexOf(unit)
+    if (index >= 0) return (index ? chineseInteger(text.slice(0, index)) : 1) * multiplier + chineseInteger(text.slice(index + 1))
+  }
+  if (!/[十百千]/.test(text)) return Number([...text].map(char => CHINESE_DIGITS[char]).join('') || 0)
+  let result = 0
+  let digit = 0
+  for (const char of text) {
+    const unit = ({ 十: 10, 百: 100, 千: 1000 } as Record<string, number>)[char]
+    if (unit) { result += (digit || 1) * unit; digit = 0 }
+    else digit = CHINESE_DIGITS[char]
+  }
+  return result + digit
+}
+
+/** ASR may render the same spoken number as 6 or 六. Keep original display text. */
+function transcriptTokens(text: string): Array<{ text: string; key: string }> {
+  return (normalizePracticeText(text).match(/[0-9]+|[零〇一二两三四五六七八九十百千万亿]+|[^]/gu) || []).map(token => {
+    if (/^[0-9]+$/.test(token)) return { text: token, key: `number:${Number(token)}` }
+    if (/^[零〇一二两三四五六七八九十百千万亿]+$/.test(token)) return { text: token, key: `number:${chineseInteger(token)}` }
+    return { text: token, key: token }
+  })
+}
+
 export function comparePracticeTexts(userText: string, original: string): {
   accuracyScore: number
   charByChar: CharacterComparison[]
   errors: TranscriptError[]
 } {
-  const userChars = [...normalizePracticeText(userText)]
-  const originalChars = [...normalizePracticeText(original)]
+  const userChars = transcriptTokens(userText)
+  const originalChars = transcriptTokens(original)
   const distances = Array.from(
     { length: originalChars.length + 1 },
     () => Array<number>(userChars.length + 1).fill(0)
@@ -33,7 +60,7 @@ export function comparePracticeTexts(userText: string, original: string): {
 
   for (let i = 1; i <= originalChars.length; i += 1) {
     for (let j = 1; j <= userChars.length; j += 1) {
-      const substitutionCost = originalChars[i - 1] === userChars[j - 1] ? 0 : 1
+      const substitutionCost = originalChars[i - 1].key === userChars[j - 1].key ? 0 : 1
       distances[i][j] = Math.min(
         distances[i - 1][j] + 1,
         distances[i][j - 1] + 1,
@@ -49,17 +76,17 @@ export function comparePracticeTexts(userText: string, original: string): {
     if (
       i > 0 && j > 0
       && distances[i][j] === distances[i - 1][j - 1]
-        + (originalChars[i - 1] === userChars[j - 1] ? 0 : 1)
+        + (originalChars[i - 1].key === userChars[j - 1].key ? 0 : 1)
     ) {
       reversed.push({
-        char: originalChars[i - 1],
-        userSaid: userChars[j - 1],
-        correct: originalChars[i - 1] === userChars[j - 1],
+        char: originalChars[i - 1].text,
+        userSaid: userChars[j - 1].text,
+        correct: originalChars[i - 1].key === userChars[j - 1].key,
       })
       i -= 1
       j -= 1
     } else if (i > 0 && distances[i][j] === distances[i - 1][j] + 1) {
-      reversed.push({ char: originalChars[i - 1], userSaid: '_', correct: false })
+      reversed.push({ char: originalChars[i - 1].text, userSaid: '_', correct: false })
       i -= 1
     } else {
       // An inserted user character still lowers the edit-distance score, but it
