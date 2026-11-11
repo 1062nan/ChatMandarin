@@ -33,6 +33,7 @@ import { createMistakesFromErrors } from '@/lib/db/mistakes'
 import { analyzeAudio } from '@/lib/audio/analyze'
 import { getSubscriptionContext, consumeConversationSeconds } from '@/lib/subscription/tier'
 import { validateAudioFile } from '@/lib/practice/request'
+import { validateConversationWav } from '@/lib/audio/conversation-wav'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -90,7 +91,9 @@ export async function POST(request: NextRequest) {
 
     const subCtx = await getSubscriptionContext(profile.id)
     const audioBuffer = await audio.file.arrayBuffer()
-    const audioDurationSeconds = Math.max(1, Math.ceil(Math.max(0, audioBuffer.byteLength - 44) / 32000))
+    const wav = validateConversationWav(audioBuffer)
+    if (!wav.ok) return NextResponse.json({ error: wav.error }, { status: 400 })
+    const audioDurationSeconds = Math.ceil(wav.durationSeconds)
     const convQuota = await consumeConversationSeconds(profile.id, audioDurationSeconds)
     if (!convQuota.ok) {
       return NextResponse.json(
@@ -119,7 +122,7 @@ export async function POST(request: NextRequest) {
     const scenarioData = scenario as Record<string, any>
 
     // 6. ASR：用户音频 → 文字
-    const audioFormat = audio.format
+    const audioFormat = 'wav'
 
     // 诊断：检查音频是否静音（16-bit PCM）
     const audioDiag = analyzeAudio(audioBuffer)

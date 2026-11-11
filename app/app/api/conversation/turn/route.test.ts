@@ -12,6 +12,7 @@ vi.mock('@/lib/audio/analyze', () => ({ analyzeAudio: () => ({ silent: false }) 
 vi.mock('@/lib/subscription/tier', () => ({ getSubscriptionContext: async () => ({ plan: 'plus' }), consumeConversationSeconds: mocks.quota }))
 vi.mock('@/lib/practice/request', async () => import('../../../../lib/practice/request'))
 import { POST } from './route'
+import { encodeWAV } from '@/lib/audio/wav-encoder'
 function query(data: unknown) {
   const chain: any = {}
   for (const method of ['select', 'eq']) chain[method] = () => chain
@@ -21,9 +22,9 @@ function query(data: unknown) {
 function client(ended = false) {
   return { auth: { getUser: async () => ({ data: { user: { id: 'auth' } } }) }, from: (table: string) => query(table === 'profiles' ? { id: 'owner' } : table === 'conversations' ? { user_id: 'owner', scenario: 'real-scenario', hsk_level: 2, correction_mode: 'friendly', ended_at: ended ? 'yesterday' : null } : { name: { en: 'Real scenario' } }) }
 }
-function request() {
+function request(audio: Blob = encodeWAV(new Float32Array(16000))) {
   const form = new FormData()
-  form.append('audio', new Blob([new Uint8Array(1200)], { type: 'audio/wav' }), 'recording.wav')
+  form.append('audio', audio, 'recording.wav')
   form.append('conversation_id', 'session')
   form.append('turn_index', '0')
   form.append('scenario_id', 'tampered')
@@ -42,6 +43,12 @@ beforeEach(() => {
   mocks.quota.mockResolvedValue({ ok: true })
 })
 describe('conversation turn persistence contract', () => {
+  it('rejects disguised non-audio before charging quota or calling ASR', async () => {
+    const response = await POST(request(new Blob([new Uint8Array(32044)])))
+    expect(response.status).toBe(400)
+    expect(mocks.quota).not.toHaveBeenCalled()
+    expect(mocks.asr).not.toHaveBeenCalled()
+  })
   it('preserves unavailable scores and uses server-side learning settings', async () => {
     const response = await POST(request())
     expect(response.status).toBe(200)

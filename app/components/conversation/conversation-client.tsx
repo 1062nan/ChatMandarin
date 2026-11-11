@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Mic, MicOff, Loader2, Volume2, AlertCircle, CheckCircle2, X, Sparkles } from 'lucide-react'
 import { AudioRecorder } from '@/lib/audio/wav-encoder'
+import { validateConversationWav } from '@/lib/audio/conversation-wav'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils/cn'
@@ -158,64 +159,19 @@ export function ConversationClient({
     }
   }, [conversationId, state, audioRecorder])
 
-  // 停止录音 → 发送处理
-  const handleStopRecording = useCallback(async () => {
-    if (state !== 'recording') return
-
-    let result: { blob: Blob; duration: number; diagnostics?: any } | null = null
-    try {
-      result = await audioRecorder.stop()
-    } catch (err) {
-      setState('idle')
-      toast.error('录音失败：' + (err as Error).message)
-      return
-    }
-
-    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
-      setState('idle')
-      // 给出更有用的诊断
-      const d = result?.diagnostics
-      if (d?.chunks === 0) {
-        toast.error('麦克风没有声音输入。请检查麦克风权限和设备。')
-        console.error('[AudioRecorder] 0 chunks received', d)
-      } else if (result && result.duration < 0.3) {
-        toast.error(`录音太短（${Math.round(result.duration * 1000)}ms）。请按住按钮多说一会儿。`)
-      } else {
-        toast.error('Recording too short. Please try again.')
-        console.error('[AudioRecorder] small blob', d)
-      }
-      return
-    }
-
-    // 整段音量都很低 → 静音检测
-    if (maxLevelRef.current < 0.01) {
-      setState('idle')
-      toast.error(
-        '麦克风未检测到声音输入。请检查：1) 浏览器地址栏左侧 🔒 麦克风权限；' +
-          '2) 系统是否选对了麦克风设备；3) 麦克风是否被静音。'
-      )
-      return
-    }
-
+  const submitAudio = useCallback(async (blob: Blob) => {
+    if (!conversationId) return
+    setError(null)
     setState('processing')
 
     try {
       const formData = new FormData()
-      formData.append('audio', result.blob, 'recording.wav')
+      formData.append('audio', blob, 'recording.wav')
       formData.append('conversation_id', conversationId!)
       formData.append('turn_index', String(turnIndex))
       formData.append('scenario_id', scenarioId)
       formData.append('hsk_level', String(hskLevel))
       formData.append('correction_mode', correctionMode)
-      // 客户端诊断信息（帮助排查"录音太短/没声音"）
-      formData.append(
-        'diag',
-        JSON.stringify({
-          duration: result.duration,
-          blobSize: result.blob.size,
-          ...(result.diagnostics || {}),
-        })
-      )
 
       const res = await fetch('/api/conversation/turn', {
         method: 'POST',
@@ -273,7 +229,70 @@ export function ConversationClient({
       setState('idle')
       setError((err as Error).message || 'Something went wrong. Please try again.')
     }
-  }, [state, audioRecorder, conversationId, turnIndex, scenarioId, hskLevel, correctionMode, router])
+  }, [conversationId, turnIndex, scenarioId, hskLevel, correctionMode, router])
+
+  // 停止录音 → 发送处理
+  const handleStopRecording = useCallback(async () => {
+    if (state !== 'recording') return
+
+    let result: { blob: Blob; duration: number; diagnostics?: any } | null = null
+    try {
+      result = await audioRecorder.stop()
+    } catch (err) {
+      setState('idle')
+      toast.error('录音失败：' + (err as Error).message)
+      return
+    }
+
+    if (!result || result.blob.size < 1000 || result.duration < 0.3) {
+      setState('idle')
+      // 给出更有用的诊断
+      const d = result?.diagnostics
+      if (d?.chunks === 0) {
+        toast.error('麦克风没有声音输入。请检查麦克风权限和设备。')
+        console.error('[AudioRecorder] 0 chunks received', d)
+      } else if (result && result.duration < 0.3) {
+        toast.error(`录音太短（${Math.round(result.duration * 1000)}ms）。请按住按钮多说一会儿。`)
+      } else {
+        toast.error('Recording too short. Please try again.')
+        console.error('[AudioRecorder] small blob', d)
+      }
+      return
+    }
+
+    // 整段音量都很低 → 静音检测
+    if (maxLevelRef.current < 0.01) {
+      setState('idle')
+      toast.error(
+        '麦克风未检测到声音输入。请检查：1) 浏览器地址栏左侧 🔒 麦克风权限；' +
+          '2) 系统是否选对了麦克风设备；3) 麦克风是否被静音。'
+      )
+      return
+    }
+
+    await submitAudio(result.blob)
+  }, [state, audioRecorder, submitAudio])
+
+  const handleAudioUpload = async (file: File) => {
+    if (!conversationId || state !== 'idle' || isEnding) return
+    if (file.size > 8 * 1024 * 1024) {
+      setError('Audio file is too large (maximum 8 MB).')
+      return
+    }
+    setState('processing')
+    try {
+      const validation = validateConversationWav(await file.arrayBuffer())
+      if (!validation.ok) {
+        setState('idle')
+        setError(validation.error)
+        return
+      }
+      await submitAudio(file)
+    } catch {
+      setState('idle')
+      setError('Could not read the audio file. Please try another WAV recording.')
+    }
+  }
 
   // 播放音频
   const playAudio = (base64: string) => {
@@ -326,7 +345,7 @@ export function ConversationClient({
   // 键盘支持（空格键）
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && state === 'idle' && !e.repeat) {
+      if (e.code === 'Space' && state === 'idle' && !e.repeat && !(e.target instanceof HTMLElement && e.target.closest('button, input, textarea, select, a, [contenteditable]'))) {
         e.preventDefault()
         handleStartRecording()
       }
@@ -483,6 +502,27 @@ export function ConversationClient({
               {state === 'recording' && 'Release to send'}
               {state === 'processing' && 'Processing your speech...'}
             </p>
+
+            <div className="text-center text-sm">
+              <label htmlFor="conversation-audio-upload" className="block text-muted-foreground">
+                No microphone? Upload a recording
+              </label>
+              <input
+                id="conversation-audio-upload"
+                type="file"
+                accept=".wav,audio/wav"
+                disabled={state !== 'idle' || !conversationId || isEnding}
+                className="mt-2 max-w-full text-xs"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  event.target.value = ''
+                  if (file) void handleAudioUpload(file)
+                }}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                WAV · 16 kHz · mono · 16-bit PCM · 0.3–120 seconds. Selecting a file sends it for speech recognition and uses your practice allowance.
+              </p>
+            </div>
 
             {/* 取消按钮（录音中） */}
             {state === 'recording' && (
