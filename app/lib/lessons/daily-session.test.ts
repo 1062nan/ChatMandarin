@@ -40,3 +40,27 @@ describe('unified daily next-action policy',()=>{
     expect(dailySessionRefreshPlan(planDailySession(cards(),empty,now))).toEqual({status:'new',checkedAt:now.toISOString()})
   })
 })
+
+describe('optional focus never replaces recall obligations',()=>{
+  const focus={preference:{status:'known' as const,focus:'speaking' as const},speaking:{status:'available' as const,dailyRemaining:1,monthlyRemaining:null,checkedAt:now.toISOString()}}
+  it('selects Free-accessible speaking only with known no-due schedules',()=>{
+    expect(planDailySession(cards(),empty,now,focus).action.kind).toBe('speaking')
+    expect(planDailySession(cards('2026-11-12T00:00:00Z'),empty,now,focus).action).toMatchObject({kind:'lesson',intent:'recall'})
+    expect(planDailySession(cards(),correction('2026-11-12T00:00:00Z'),now,focus).action.kind).toBe('corrections')
+    expect(planDailySession(cards(),{status:'unavailable'},now,focus).action.kind).toBe('check')
+  })
+  it('falls back honestly when speaking is exhausted or availability unknown',()=>{
+    const exhausted={...focus,speaking:{status:'exhausted' as const,resetsAt:'2026-11-14T00:00:00Z',checkedAt:now.toISOString()}}
+    expect(planDailySession(cards(),empty,now,exhausted)).toMatchObject({action:{kind:'lesson',intent:'learn'},speakingNotice:{status:'exhausted'}})
+    expect(planDailySession(cards(),empty,now,{...focus,speaking:{status:'unavailable',checkedAt:now.toISOString()}})).toMatchObject({action:{kind:'lesson'},speakingNotice:{status:'unavailable'}})
+  })
+  it('preserves default behavior for existing users and failed preference reads',()=>{
+    const prior=planDailySession(cards(),empty,now)
+    expect(planDailySession(cards(),empty,now,{preference:{status:'known',focus:null},speaking:null})).toEqual(prior)
+    expect(planDailySession(cards(),empty,now,{preference:{status:'unavailable',focus:null},speaking:null})).toEqual(prior)
+  })
+  it('rechecks speaking snapshots within one minute while retaining earlier recall deadlines',()=>{
+    expect(planDailySession(cards(),empty,now,focus).nextRefreshAt).toBe('2026-11-13T03:01:00.000Z')
+    expect(planDailySession(cards(),{...empty,nextReviewAt:'2026-11-13T03:00:10Z'},now,focus).nextRefreshAt).toBe('2026-11-13T03:00:10.000Z')
+  })
+})

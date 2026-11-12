@@ -1,3 +1,4 @@
+import type { FocusPreference,SpeakingAvailability } from '@/lib/learning/focus'
 import type { PathwayCard } from './pathway'
 import type { GuidedLessonPlan } from './daily-plan'
 export type CorrectionSchedule =
@@ -6,11 +7,12 @@ export type CorrectionSchedule =
 export type DailyAction =
   | { kind:'lesson'; lessonId:string; intent:'recall'|'learn'|'revisit' }
   | { kind:'corrections'; intent:'recall'|'scheduled'; count:number; hasMore:boolean; at:string }
+  | { kind:'speaking';availability:Extract<SpeakingAvailability,{status:'available'}> }
   | { kind:'check' }
-export interface DailySessionPlan { action:DailyAction; unknown:boolean; checkedAt:string; nextRefreshAt:string|null }
+export interface DailySessionPlan { action:DailyAction; unknown:boolean; checkedAt:string; nextRefreshAt:string|null; speakingNotice?:Exclude<SpeakingAvailability,{status:'available'}> }
 
 /** The server passes one instant for all sources. No browser-clock due decisions. */
-export function planDailySession(cards:PathwayCard[],corrections:CorrectionSchedule,now:Date):DailySessionPlan {
+export function planDailySession(cards:PathwayCard[],corrections:CorrectionSchedule,now:Date,focus?:{preference:FocusPreference;speaking:SpeakingAvailability|null}):DailySessionPlan {
   const unknown=corrections.status==='unavailable'||corrections.incomplete||cards.some(card=>card.plan.status==='unavailable')
   const due:{action:DailyAction;at:string}[]=[]
   const future:{action:DailyAction;at:string}[]=[]
@@ -26,8 +28,11 @@ export function planDailySession(cards:PathwayCard[],corrections:CorrectionSched
   const chronological=(a:{at:string},b:{at:string})=>Date.parse(a.at)-Date.parse(b.at)
   due.sort(chronological);future.sort(chronological)
   const nextNew=cards.find(card=>card.plan.status==='new')
-  const action:DailyAction=due[0]?.action||(unknown?{kind:'check'}:nextNew?{kind:'lesson',lessonId:nextNew.id,intent:'learn'}:future[0]?.action||{kind:'check'})
-  return {action,unknown,checkedAt:now.toISOString(),nextRefreshAt:future[0]?.at||null}
+  const speaking=focus?.preference.status==='known'&&focus.preference.focus==='speaking'?focus.speaking:null
+  const speakingAction:DailyAction|null=speaking?.status==='available'?{kind:'speaking',availability:speaking}:null
+  const action:DailyAction=due[0]?.action||(unknown?{kind:'check'}:speakingAction|| (nextNew?{kind:'lesson',lessonId:nextNew.id,intent:'learn'}:future[0]?.action||{kind:'check'}))
+  const nextRefreshAt=focus?.preference.focus==='speaking'?new Date(Math.min(Date.parse(future[0]?.at||'')||Infinity,now.getTime()+60_000)).toISOString():future[0]?.at||null
+  return {action,unknown,checkedAt:now.toISOString(),nextRefreshAt,...(speaking&&speaking.status!=='available'?{speakingNotice:speaking}:{})}
 }
 export function dailySessionRefreshPlan(plan:DailySessionPlan):GuidedLessonPlan {
   return plan.nextRefreshAt?{status:'scheduled',checkedAt:plan.checkedAt,nextReviewAt:plan.nextRefreshAt}:{status:'new',checkedAt:plan.checkedAt}

@@ -7,10 +7,17 @@ export function DailySessionAction({plan,cards,refreshing,onRefresh}:{plan:Daily
   const lesson=action.kind==='lesson'?cards.find(card=>card.id===action.lessonId):undefined
   return <div className="space-y-3">
     {plan.unknown && <p role="status" className="rounded-lg border p-3 text-sm">Some review schedules could not be confirmed. This is only the next known step; check schedules before assuming no reviews are due.</p>}
+    {plan.speakingNotice && <p role="status" className="rounded-lg border p-3 text-sm">{plan.speakingNotice.status==='exhausted'?<>Your speaking-practice allowance is currently used. Next reset: <ScheduleTime value={plan.speakingNotice.resetsAt} />. Your focus is saved; guided learning and recall remain available.</>:'Speaking-practice availability could not be checked. Your focus is saved; the plan below uses the default guided path when no recall is due.'}</p>}
     {lesson ? <GuidedPlanDetails plan={lesson.plan} lesson={lesson} refreshing={refreshing} onRefresh={onRefresh} /> :
       <section aria-labelledby="daily-session-action-title" className="space-y-3 rounded-lg border border-jade/30 bg-jade/5 p-5">
         <h3 id="daily-session-action-title" className="text-lg font-semibold">{action.kind==='corrections'&&action.intent==='recall'?'先回忆，再继续 · Recall before moving on':'今日下一步 · Your next step'}</h3>
-        {action.kind==='corrections' ? <>
+        {action.kind==='speaking'?<>
+          <h4 className="font-medium">口语练习 · Speaking practice</h4>
+          <p className="text-sm">Your chosen focus: recorded speaking exercises with transcript-based feedback. This is not live conversation, a proficiency assessment or a full HSKK mock exam.</p>
+          <p className="text-sm">{action.availability.dailyRemaining===null&&action.availability.monthlyRemaining===null?'Your current plan has no fixed speaking-submission cap.':`Available now: ${action.availability.dailyRemaining!==null?`${action.availability.dailyRemaining} daily`:''}${action.availability.dailyRemaining!==null&&action.availability.monthlyRemaining!==null?' + ':''}${action.availability.monthlyRemaining!==null?`${action.availability.monthlyRemaining} monthly`:''} submission allowance.`} This is a snapshot, not a reservation; availability is checked again when you submit.</p>
+          <Link className="inline-block font-medium text-vermilion underline" href="/hskk">选择口语练习 / Choose a speaking exercise</Link>
+          <p className="text-xs text-muted-foreground">Opening the exercise list uses no speaking-submission allowance. Recording or audio upload is needed. Completing the final recording or upload submits the exercise and can use an attempt. Some exercise audio loads automatically and has separate usage limits.</p>
+        </>:action.kind==='corrections' ? <>
           <h4 className="font-medium">对话纠错回忆 · Conversation correction recall</h4>
           {action.intent==='recall'?<p className="text-sm">{action.hasMore?'At least ':''}{action.count} correction {action.count===1?'card is':'cards are'} due. Start a batch of up to 10. Recall before revealing corrections; other due work remains available afterward.</p>:<p className="text-sm">Next correction recall: <ScheduleTime value={action.at} />. You can view the schedule now; recall is not due yet.</p>}
           <Link className="inline-block font-medium text-vermilion underline" href="/mistakes">{action.intent==='recall'?'开始纠错回忆 / Open correction recall':'查看复习安排 / View review schedule'}</Link>

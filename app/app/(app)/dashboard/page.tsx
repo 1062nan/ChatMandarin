@@ -5,6 +5,8 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getLearningPath } from '@/lib/db/learning-path'
 import { JourneyView } from './journey-view'
 import { collectCorrectionSchedule } from '@/lib/practice/review-summary'
+import { readFocusPreference,readSpeakingAvailability } from '@/lib/learning/focus-server'
+import { LearningFocusControl } from '@/components/lessons/learning-focus-control'
 import { planDailySession } from '@/lib/lessons/daily-session'
 
 export const metadata = { title: 'Dashboard' }
@@ -64,7 +66,9 @@ export default async function DashboardPage() {
     .eq('user_id', profile.id)
     .in('lesson_id', GUIDED_LESSONS.map(lesson=>lesson.id))
   const dailyPlans = guidedPathway(guidedProgress, !!guidedError, planNow)
-  const dailySession=planDailySession(dailyPlans,correctionSchedule,planNow)
+  const focusPreference=await readFocusPreference(supabase,profile.id)
+  const speaking=focusPreference.status==='known'&&focusPreference.focus==='speaking'?await readSpeakingAvailability(supabase,profile.id,planNow):null
+  const dailySession=planDailySession(dailyPlans,correctionSchedule,planNow,{preference:focusPreference,speaking})
 
 
   return (
@@ -81,6 +85,7 @@ export default async function DashboardPage() {
       </div>
 
       <GuidedLearningPath cards={dailyPlans} dailySession={dailySession} />
+      <LearningFocusControl preference={focusPreference} />
 
       <div><h2 className="text-xl font-semibold">练习库 · Browse more practice</h2><p className="mt-1 text-sm text-muted-foreground">Choose optional practice below. Your recommended next step is shown above; these activities do not replace it.</p></div>
 

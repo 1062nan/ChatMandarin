@@ -30,6 +30,14 @@ try {
       const after=await db.query("SELECT * FROM lesson_progress WHERE user_id='bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'")
       if(JSON.stringify(before.rows)!==JSON.stringify(after.rows)) throw new Error('Migration changed existing restaurant progress/receipt')
       console.log('Preexisting restaurant progress/receipt byte-equivalence after additive migration: PASS')
+    } else if (filename.endsWith('_learning_focus_preferences.sql')) {
+      const before=await db.query("SELECT (SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM profiles p) AS profiles,(SELECT jsonb_agg(to_jsonb(lp) ORDER BY user_id,lesson_id) FROM lesson_progress lp) AS lessons")
+      await db.exec(sql)
+      const after=await db.query("SELECT (SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM profiles p) AS profiles,(SELECT jsonb_agg(to_jsonb(lp) ORDER BY user_id,lesson_id) FROM lesson_progress lp) AS lessons")
+      if(JSON.stringify(before.rows)!==JSON.stringify(after.rows)) throw new Error('Learning focus migration changed existing profiles or lessons')
+      const initial=await db.query('SELECT count(*)::int AS count FROM learning_preferences')
+      if(initial.rows[0].count!==0) throw new Error('Existing users must retain absent/default preference')
+      console.log('Learning focus additive migration preserves profiles/progress/defaults: PASS')
     } else await db.exec(sql)
     console.log(`Loaded ${filename}`)
   }
@@ -77,6 +85,24 @@ try {
     await db.exec("INSERT INTO lesson_progress(user_id,lesson_id,next_review_at) VALUES ('22222222-2222-2222-2222-222222222222','unapproved-lesson',now())")
     throw new Error('Unknown lesson accepted')
   } catch (error) { if(error.code!=='23514') throw error }
+  await db.exec("RESET ROLE; SET ROLE authenticated; SELECT set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false)")
+  await db.exec("INSERT INTO learning_preferences(user_id,focus) VALUES('22222222-2222-2222-2222-222222222222','guided') ON CONFLICT(user_id) DO UPDATE SET focus=excluded.focus")
+  await db.exec("INSERT INTO learning_preferences(user_id,focus) VALUES('22222222-2222-2222-2222-222222222222','speaking') ON CONFLICT(user_id) DO UPDATE SET focus=excluded.focus")
+  const ownFocus=await db.query('SELECT focus FROM learning_preferences')
+  if(ownFocus.rows.length!==1||ownFocus.rows[0].focus!=='speaking') throw new Error('Owner focus upsert failed')
+  await denied("INSERT INTO learning_preferences(user_id,focus) VALUES('44444444-4444-4444-4444-444444444444','speaking')")
+  await denied("UPDATE learning_preferences SET user_id='44444444-4444-4444-4444-444444444444'")
+  await denied('DELETE FROM learning_preferences')
+  await db.exec("SELECT set_config('request.jwt.claim.sub','33333333-3333-3333-3333-333333333333',false)")
+  if((await db.query('SELECT * FROM learning_preferences')).rows.length!==0) throw new Error('Foreign focus visible')
+  await db.exec('RESET ROLE; SET ROLE anon')
+  await denied('SELECT * FROM learning_preferences')
+  await db.exec('RESET ROLE; SET ROLE service_role')
+  try {
+    await db.exec("INSERT INTO learning_preferences(user_id,focus) VALUES('44444444-4444-4444-4444-444444444444','HSK6')")
+    throw new Error('Invalid preference accepted')
+  } catch(error) { if(error.code!=='23514') throw error }
+  console.log('Focus owner-only read/upsert, no foreign transfer/delete/anon access, strict enum: PASS')
   console.log('Restaurant and meeting time lesson isolation, allowlist: PASS')
   console.log('Restaurant lesson owner isolation, browser write denial, anonymous denial and CAS: PASS')
 } catch (error) {
