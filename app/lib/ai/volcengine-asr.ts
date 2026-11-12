@@ -13,6 +13,7 @@
  * 6. JSON: format=wav, codec=raw, enable_itn/punc/ddc/show_utterances, enable_nonstream=false
  */
 
+import { observeProviderAttempt } from './provider-usage'
 import WebSocket from 'ws'
 import { gzipSync, gunzipSync } from 'zlib'
 import { randomUUID } from 'crypto'
@@ -251,7 +252,9 @@ async function recognizeSpeechDirect(
     },
   })
 
-  return new Promise<ASRResult>((resolve, reject) => {
+  return observeProviderAttempt({ provider: 'volcengine', operation: 'asr', transport: 'direct',
+    endpointClass: 'official', resource: 'volc.seedasr.sauc.duration', offeredAudioSeconds: pcmData.length / 32000,
+  }, () => new Promise<ASRResult>((resolve, reject) => {
     const requestId = randomUUID()
     let ws: WebSocket
     try {
@@ -334,11 +337,7 @@ async function recognizeSpeechDirect(
             try { ws.close() } catch {}
             reject(
               new Error(
-                `ASR server error code=${resp.code}: ${
-                  typeof resp.payloadMsg === 'string'
-                    ? resp.payloadMsg
-                    : JSON.stringify(resp.payloadMsg)
-                }`
+                `ASR server error code=${resp.code}`
               )
             )
           }
@@ -375,7 +374,7 @@ async function recognizeSpeechDirect(
         else reject(new Error('ASR closed without result'))
       }
     })
-  })
+  }))
 }
 
 /**

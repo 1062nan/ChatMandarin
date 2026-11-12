@@ -4,6 +4,7 @@
  * https://api.deepseek.com/v1/chat/completions
  */
 
+import { endpointClass, observeProviderAttempt } from './provider-usage'
 import { jsonrepair } from 'jsonrepair'
 import { normalizeConversationFeedback, type TranscriptScores } from './conversation-feedback'
 
@@ -61,7 +62,10 @@ export async function getConversationResponse(
     throw new Error('DEEPSEEK_API_KEY is not configured')
   }
 
-  const callDeepSeek = async (useJsonMode: boolean) => {
+  const callDeepSeek = async (useJsonMode: boolean) => observeProviderAttempt({
+    provider: 'deepseek', operation: 'conversation', transport: 'direct',
+    endpointClass: endpointClass(DEEPSEEK_BASE_URL, 'api.deepseek.com'), resource: 'deepseek-chat',
+  }, async observe => {
     const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
       method: 'POST',
       headers: {
@@ -80,41 +84,39 @@ export async function getConversationResponse(
       }),
     })
 
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`DeepSeek API error (${response.status}): ${error}`)
-    }
+    observe({ httpStatus: response.status })
+    if (!response.ok) throw new Error(`DeepSeek API error (${response.status})`)
 
-    const data = await response.json()
+    const data = await response.json().catch(() => { throw new Error('Invalid provider JSON response') })
+    observe({ model: data.model, usage: data.usage })
     const choice = data.choices?.[0]
     const content: string | undefined = choice?.message?.content
     const finishReason: string | undefined = choice?.finish_reason
     const usage = data.usage
 
-    console.log('[DeepSeek] finish_reason:', finishReason, 'content_len:', content?.length || 0, 'usage:', usage)
 
     return { content, finishReason, usage }
-  }
+  })
 
   // 第一次尝试：json_object 模式
   let result
   try {
     result = await callDeepSeek(true)
   } catch (e) {
-    console.error('[DeepSeek] first call failed:', e)
+    console.error('[DeepSeek] first call failed')
     throw e
   }
 
   // 如果返回空/纯空格，重试一次（不开 json_object 模式）
   if (!result.content || result.content.trim().length === 0) {
-    console.warn('[DeepSeek] empty content, retrying without json_object mode. finish_reason:', result.finishReason)
+    console.warn('[DeepSeek] empty content, retrying without json_object mode')
     result = await callDeepSeek(false)
   }
 
   const content = result.content || ''
   if (content.trim().length === 0) {
     throw new Error(
-      `DeepSeek returned empty content twice. Last finish_reason: ${result.finishReason}, usage: ${JSON.stringify(result.usage)}`
+      'DeepSeek returned empty content twice'
     )
   }
 
@@ -180,7 +182,11 @@ export async function getHSKKScore(
     throw new Error('DEEPSEEK_API_KEY is not configured')
   }
 
-  const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
+  const data = await observeProviderAttempt({
+    provider: 'deepseek', operation: 'hskk_score', transport: 'direct',
+    endpointClass: endpointClass(DEEPSEEK_BASE_URL, 'api.deepseek.com'), resource: 'deepseek-chat',
+  }, async observe => {
+    const response = await fetch(`${DEEPSEEK_BASE_URL}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -197,12 +203,13 @@ export async function getHSKKScore(
     })
   })
 
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`DeepSeek API error (${response.status}): ${error}`)
-  }
+  observe({ httpStatus: response.status })
+  if (!response.ok) throw new Error(`DeepSeek API error (${response.status})`)
 
-  const data = await response.json()
+  const data = await response.json().catch(() => { throw new Error('Invalid provider JSON response') })
+  observe({ model: data.model, usage: data.usage })
+  return data
+  })
   const content = data.choices[0]?.message?.content
 
   if (!content) {
@@ -228,7 +235,7 @@ export async function getHSKKScore(
       const repaired = jsonrepair(content)
       return JSON.parse(repaired) as HSKKScoreResponse
     } catch {}
-    throw new Error(`Failed to parse HSKK score response after all repair attempts. First 300 chars: ${content.substring(0, 300)}`)
+    throw new Error('Failed to parse HSKK score response after all repair attempts')
   }
 }
 

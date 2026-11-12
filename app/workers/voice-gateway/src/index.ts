@@ -1,3 +1,4 @@
+import { endpointClass, observeProviderAttempt } from '../../../lib/ai/provider-usage'
 import { readBoundedBytes } from '../../../lib/http/bounded-json'
 const ASR_ENDPOINT = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream'
 const TTS_ENDPOINT = 'https://openspeech.bytedance.com/api/v1/tts'
@@ -96,8 +97,7 @@ export default {
       return json(result)
     } catch (error) {
       if (error instanceof RangeError) { status = 413; return json({ error: 'Request body too large' }, 413) }
-      const message = error instanceof Error ? error.message : 'Unknown gateway error'
-      console.error(JSON.stringify({ event: 'voice_gateway_error', path: url.pathname, colo, message }))
+      console.error(JSON.stringify({ event: 'voice_gateway_error', path: url.pathname, colo }))
       status = 502
       return json({ error: 'Voice upstream request failed' }, 502)
     } finally {
@@ -152,6 +152,11 @@ async function recognizeSpeech(wav: Uint8Array, env: Env): Promise<AsrResult> {
 
   const websocketEndpoint = env.VOLCENGINE_ASR_ENDPOINT || ASR_ENDPOINT
   const upgradeEndpoint = websocketEndpoint.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:')
+  return observeProviderAttempt({ provider: 'volcengine', operation: 'asr', transport: 'cloudflare_worker',
+    endpointClass: endpointClass(websocketEndpoint, 'openspeech.bytedance.com'),
+    resource: !env.VOLCENGINE_ASR_RESOURCE_ID || env.VOLCENGINE_ASR_RESOURCE_ID === DEFAULT_RESOURCE_ID ? 'volc.seedasr.sauc.duration' : 'custom',
+    offeredAudioSeconds: pcm.byteLength / 32000,
+  }, async observe => {
   const response = await fetch(upgradeEndpoint, {
     headers: {
       Upgrade: 'websocket',
@@ -162,6 +167,7 @@ async function recognizeSpeech(wav: Uint8Array, env: Env): Promise<AsrResult> {
       'X-Api-Request-Id': crypto.randomUUID(),
     },
   })
+  observe({ httpStatus: response.status })
   const ws = response.webSocket
   if (!ws) throw new Error(`ASR upgrade failed with HTTP ${response.status}`)
   ws.accept()
@@ -236,6 +242,7 @@ async function recognizeSpeech(wav: Uint8Array, env: Env): Promise<AsrResult> {
       }
     })()
   })
+  })
 }
 
 async function synthesizeSpeech(input: TtsRequest, env: Env) {
@@ -253,6 +260,9 @@ async function synthesizeSpeech(input: TtsRequest, env: Env) {
     ? input.encoding
     : 'mp3'
 
+  return observeProviderAttempt({ provider: 'volcengine', operation: 'tts', transport: 'cloudflare_worker',
+    endpointClass: 'official', resource: 'legacy_tts', inputCharacters: [...text].length,
+  }, async observe => {
   const response = await fetch(TTS_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
@@ -274,13 +284,15 @@ async function synthesizeSpeech(input: TtsRequest, env: Env) {
       },
     }),
   })
+  observe({ httpStatus: response.status })
   if (!response.ok) throw new Error(`TTS upstream returned HTTP ${response.status}`)
   const data = await response.json() as { code?: number; message?: string; data?: string; duration?: string | number }
-  if (data.code !== 3000 || !data.data) throw new Error(`TTS upstream failed with code ${data.code || 'unknown'}`)
+  if (data.code !== 3000 || !data.data) throw new Error('TTS upstream rejected synthesis')
   return {
     audioBase64: data.data,
     duration: Number(data.duration) || (text.length * 0.3) / speedRatio,
   }
+  })
 }
 
 async function buildFullRequest(jsonPayload: string, sequence: number): Promise<Uint8Array> {

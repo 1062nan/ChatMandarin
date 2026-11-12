@@ -5,6 +5,7 @@
  * 参考 demo：tts_http_demo.py
  */
 
+import { observeProviderAttempt } from './provider-usage'
 import { callVoiceGateway, usesVoiceGateway } from './voice-gateway-client'
 
 const VOLC_API_KEY = process.env.VOLCENGINE_API_KEY || ''
@@ -62,6 +63,9 @@ export async function synthesizeSpeech(
 
   const truncatedText = text.slice(0, 1000)
 
+  return observeProviderAttempt({ provider: 'volcengine', operation: 'tts', transport: 'direct',
+    endpointClass: 'official', resource: 'legacy_tts', inputCharacters: [...truncatedText].length,
+  }, async observe => {
   const response = await fetch(TTS_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -93,15 +97,13 @@ export async function synthesizeSpeech(
     })
   })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    throw new Error(`TTS error (${response.status}): ${errorText}`)
-  }
+  observe({ httpStatus: response.status })
+  if (!response.ok) throw new Error(`TTS error (${response.status})`)
 
-  const data = await response.json()
+  const data = await response.json().catch(() => { throw new Error('Invalid provider JSON response') })
 
   if (data.code !== 3000) {
-    throw new Error(`TTS failed: ${data.message || 'unknown'} (code: ${data.code})`)
+    throw new Error('TTS provider rejected synthesis')
   }
   if (!data.data) throw new Error('TTS returned no audio data')
 
@@ -110,6 +112,7 @@ export async function synthesizeSpeech(
     audioBase64: data.data,
     duration: parseFloat(data.duration) || estimateDuration(text, speedRatio)
   }
+  })
 }
 
 /**
