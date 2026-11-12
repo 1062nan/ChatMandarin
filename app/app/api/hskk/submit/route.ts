@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     const reservation = await reserveHskk(supabase, profile.id, fingerprint, level)
     if (reservation.state === 'completed' && reservation.response) return NextResponse.json(reservation.response)
     if (reservation.state === 'processing') return NextResponse.json({ error: 'This recording is already being scored. Please retry shortly.' }, { status: 409, headers: { 'Retry-After': '5' } })
-    if (reservation.state === 'quota_denied') return NextResponse.json({ error: 'HSKK practice limit reached. Upgrade for more.', upgrade_required: true, limit_type: reservation.reason }, { status: 429 })
+    if (reservation.state === 'quota_denied') return NextResponse.json({ error: 'Speaking-practice allowance used. Daily allowance resets at 00:00 UTC; monthly allowance resets on the first day of the UTC month. Check Settings for your plan.', upgrade_required: true, limit_type: reservation.reason }, { status: 429 })
     if (!reservation.test_id || !reservation.lease_token) throw new Error('Invalid HSKK reservation lease')
     activeLease = { profileId: profile.id, fingerprint, lease: reservation.lease_token }
     const referenceText = test.readAloud.passage
