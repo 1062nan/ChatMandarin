@@ -20,7 +20,7 @@ export interface PlanFeatures {
   /** 每天对话秒数上限，null = 无限 */
   conversation: { dailyLimitSec: number | null }
   /** 每天次数 + 每月次数，null = 无限 */
-  hskk: { dailyLimit: number | null; monthlyLimit: number | null }
+  hskk: { dailyLimit: number | null; monthlyLimit: number | null; monthlyBonusLimit?: number }
   /** 每天跟读次数，null = 无限 */
   shadowing: { dailyLimit: number | null }
   /** 配音是否可用 */
@@ -58,6 +58,19 @@ export const PLAN_FEATURES: Record<Plan, PlanFeatures> = {
   },
 }
 
+export async function isPlusSpeakingAllowanceEnabled(): Promise<boolean> {
+  try {
+    const supabase = await createSupabaseServerClient()
+    const { data, error } = await supabase.rpc('plus_speaking_allowance_enabled')
+    return !error && data === true
+  } catch { return false }
+}
+
+export function featuresForPlan(plan: Plan, plusSpeakingEnabled: boolean): PlanFeatures {
+  if (plan !== 'plus' || !plusSpeakingEnabled) return PLAN_FEATURES[plan]
+  return { ...PLAN_FEATURES.plus, hskk: { dailyLimit: 1, monthlyLimit: null, monthlyBonusLimit: 10 } }
+}
+
 export interface SubscriptionContext {
   plan: Plan
   status: string
@@ -81,7 +94,7 @@ export async function getSubscriptionContext(
     .maybeSingle()  // 用 maybeSingle 避免多记录时报错
 
   const plan = getEffectivePlan(sub)
-  const features = PLAN_FEATURES[plan]
+  const features = featuresForPlan(plan, plan === 'plus' && await isPlusSpeakingAllowanceEnabled())
 
   return {
     plan,
@@ -113,12 +126,14 @@ export async function checkQuota(
   const yearMonth = today.substring(0, 7)
 
   // daily counters
-  const { data: todayUsage } = await supabase
+  const { data: todayUsage, error: usageError } = await supabase
     .from('usage_stats')
     .select('conversation_seconds, conversation_count, hskk_count, shadowing_count, dubbing_count')
     .eq('user_id', profileId)
     .eq('date', today)
     .maybeSingle()
+
+  if (usageError) throw usageError
 
   const u: Record<string, number> = (todayUsage as Record<string, number>) || {}
 
@@ -135,7 +150,16 @@ export async function checkQuota(
     }
 
     case 'hskk': {
-      const { dailyLimit, monthlyLimit } = ctx.features.hskk
+      const { dailyLimit, monthlyLimit, monthlyBonusLimit } = ctx.features.hskk
+      if (monthlyBonusLimit !== undefined) {
+        if ((u.hskk_count || 0) < 1) return { ok: true, remaining: { daily: 1 } }
+        const { data, error } = await supabase.from('usage_monthly')
+          .select('plus_hskk_bonus_count').eq('user_id', profileId).eq('year_month', yearMonth).maybeSingle()
+        if (error) throw error
+        const remaining = Math.max(0, monthlyBonusLimit - (data?.plus_hskk_bonus_count || 0))
+        return { ok: remaining > 0, reason: remaining ? undefined : 'monthly_exceeded',
+          remaining: { daily: 0, monthly: remaining } }
+      }
       const dailyUsed = u.hskk_count || 0
 
       // 先检查日限

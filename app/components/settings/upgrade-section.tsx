@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils/cn'
 interface UpgradeSectionProps {
   currentPlan: string
   paymentsAvailable: boolean
+  plusSpeakingEnabled?: boolean
   hasPaidSubscription?: boolean
   cancelAtPeriodEnd?: boolean
   currentPeriodEnd?: string | null
@@ -70,6 +71,7 @@ const plans = [
 export function UpgradeSection({
   currentPlan,
   paymentsAvailable,
+  plusSpeakingEnabled = false,
   hasPaidSubscription = false,
   cancelAtPeriodEnd = false,
   currentPeriodEnd = null,
@@ -148,7 +150,7 @@ export function UpgradeSection({
           </p>
         )}
 
-        <p className="mb-4 text-sm text-muted-foreground">Current speaking-practice limits use different periods: Free includes 1 session per day, while Plus includes 3 per month. Plus does not currently increase this allowance. New checkout remains unavailable until the plan design and billing lifecycle are verified.</p>
+        <p className="mb-4 text-sm text-muted-foreground">{plusSpeakingEnabled ? 'Free retains 1 speaking-practice session per UTC day. Plus includes that daily session plus 10 flexible bonus sessions per UTC calendar month. Daily allowance is used first; unused allowances do not roll over. Pro remains unlimited.' : 'Current speaking-practice limits use different periods: Free includes 1 session per day, while Plus includes 3 per month. Plus does not currently increase this allowance. New checkout remains unavailable until the plan design and billing lifecycle are verified.'}</p>
 
         <div className="grid gap-4 sm:grid-cols-3">
           {plans.map((plan) => {
@@ -184,7 +186,7 @@ export function UpgradeSection({
                   {plan.features.map((feature, i) => (
                     <li key={i} className="flex items-start gap-1.5 text-xs">
                       <Check className="mt-0.5 h-3 w-3 shrink-0 text-jade" />
-                      {feature}
+                      {plan.id === 'plus' && feature === 'Speaking Practice (HSKK skills) sessions (3/month)' && plusSpeakingEnabled ? 'Speaking practice: 1/day + 10 bonus sessions/month (UTC)' : feature}
                     </li>
                   ))}
                 </ul>

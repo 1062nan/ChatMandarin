@@ -2,6 +2,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { SettingsClient } from '@/components/settings/settings-client'
 import { UpgradeSection } from '@/components/settings/upgrade-section'
 import { VoicePicker } from '@/components/settings/voice-picker'
+import { isPlusSpeakingAllowanceEnabled } from '@/lib/subscription/tier'
 import { getEffectivePlan } from '@/lib/subscription/access'
 import { isCreemPaymentsAvailable } from '@/lib/payment/creem'
 
@@ -30,6 +31,7 @@ export default async function SettingsPage() {
     .maybeSingle()
 
   const effectivePlan = getEffectivePlan(subscription)
+  const plusSpeakingEnabled = await isPlusSpeakingAllowanceEnabled()
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -41,6 +43,7 @@ export default async function SettingsPage() {
       />
       <UpgradeSection
         currentPlan={effectivePlan}
+        plusSpeakingEnabled={plusSpeakingEnabled}
         hasPaidSubscription={Boolean(subscription?.provider_subscription_id && subscription?.payment_provider === 'creem' && subscription?.status !== 'expired')}
         paymentsAvailable={isCreemPaymentsAvailable()}
         cancelAtPeriodEnd={subscription?.cancel_at_period_end || false}
