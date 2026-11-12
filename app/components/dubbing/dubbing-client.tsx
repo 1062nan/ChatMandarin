@@ -1,4 +1,5 @@
 'use client'
+import { ttsErrorMessage } from '@/lib/audio/tts-error'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -66,14 +67,15 @@ export function DubbingClient({ clips, ttsVoice, allowed }: { clips: Clip[]; tts
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice_type: ttsVoice })
       })
-      if (!res.ok) throw new Error('TTS failed')
-      const { audio } = await res.json()
+      const data = await res.json()
+      if (!res.ok) throw new Error(ttsErrorMessage(data))
+      const { audio } = data
       if (audio && audioRef.current) {
         audioRef.current.src = `data:audio/mp3;base64,${audio}`
         audioRef.current.play()
       }
-    } catch {
-      toast.error('Demo playback failed')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : ttsErrorMessage(null))
     } finally {
       setDemoLoading(false)
     }

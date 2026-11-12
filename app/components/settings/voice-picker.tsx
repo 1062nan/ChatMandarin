@@ -1,4 +1,5 @@
 'use client'
+import { ttsErrorMessage } from '@/lib/audio/tts-error'
 
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -55,15 +56,16 @@ export function VoicePicker({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: PREVIEW_TEXT, voice_type: voiceId })
       })
-      if (!res.ok) throw new Error('Preview failed')
-      const { audio } = await res.json()
+      const data = await res.json()
+      if (!res.ok) throw new Error(ttsErrorMessage(data))
+      const { audio } = data
       if (audio) {
         const audioEl = new Audio(`data:audio/mp3;base64,${audio}`)
         audioEl.onended = () => setPreviewing(null)
         audioEl.play()
       }
-    } catch {
-      toast.error('Failed to preview voice')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : ttsErrorMessage(null))
     } finally {
       setPreviewing(null)
     }

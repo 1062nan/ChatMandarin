@@ -1,4 +1,5 @@
 'use client'
+import { ttsErrorMessage } from '@/lib/audio/tts-error'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
@@ -59,14 +60,15 @@ export function ShadowingClient({ sentences, ttsVoice, initialSentenceId }: { se
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: current.text_zh, voice_type: ttsVoice })
       })
-      if (!res.ok) throw new Error('TTS failed')
-      const { audio } = await res.json()
+      const data = await res.json()
+      if (!res.ok) throw new Error(ttsErrorMessage(data))
+      const { audio } = data
       if (audio && audioRef.current) {
         audioRef.current.src = `data:audio/mp3;base64,${audio}`
         audioRef.current.play()
       }
-    } catch {
-      toast.error('Failed to play demo')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : ttsErrorMessage(null))
     } finally {
       setDemoLoading(false)
     }

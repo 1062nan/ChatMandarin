@@ -40,6 +40,9 @@ export async function synthesizeSpeech(
   speedRatio: number = 1.0,
   encoding: 'mp3' | 'wav' | 'pcm' | 'ogg_opus' = 'mp3'
 ): Promise<TTSResult> {
+  // Keep existing internal caller truncation consistent across direct/gateway modes.
+  if (!text || text.trim().length === 0) throw new Error('TTS text is empty')
+  text = text.slice(0, 1000)
   if (usesVoiceGateway()) {
     const encoded = new TextEncoder().encode(JSON.stringify({ text, voiceType, speedRatio, encoding }))
     const result = await callVoiceGateway<{ audioBase64: string; duration: number }>(

@@ -1,4 +1,5 @@
 'use client'
+import { ttsErrorMessage } from '@/lib/audio/tts-error'
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,7 @@ export function RestaurantLesson() {
   const audioCache=useRef(new Map<string,string>())
   const audioRequest=useRef<AbortController|null>(null)
   const saveBusy=useRef(false)
+  const submissionId=useRef<string|null>(null)
   const advancedTasks=useRef(new Set<string>())
   const tasks=tasksFor(mode)
   const task=tasks[index]
@@ -52,7 +54,7 @@ export function RestaurantLesson() {
       if(!source){
         const response=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text}),signal:controller.signal})
         const data=await response.json()
-        if(!response.ok || !data.audio) throw new Error('Audio unavailable')
+        if(!response.ok || !data.audio) throw new Error(ttsErrorMessage(data))
         source=`data:audio/mp3;base64,${data.audio}`;audioCache.current.set(text,source)
       }
       if(controller.signal.aborted)return
@@ -60,10 +62,10 @@ export function RestaurantLesson() {
       audio.onended=()=>{if(audioRef.current===audio){audioBusy.current=false;setAudioIndex(null)}}
       audio.onerror=()=>{if(audioRef.current!==audio)return;audioBusy.current=false;setAudioIndex(null);setAudioError('Audio could not play. You can retry or continue with the transcript.')}
       await audio.play()
-    }catch{if(audioRequest.current===controller){if(!controller.signal.aborted)setAudioError('Audio unavailable. Retry or use the written example; this lesson does not certify listening ability.');audioBusy.current=false;setAudioIndex(null)}}
+    }catch(error){if(audioRequest.current===controller){if(!controller.signal.aborted)setAudioError(error instanceof Error?error.message:ttsErrorMessage(null));audioBusy.current=false;setAudioIndex(null)}}
   }
   function start(nextMode:LessonMode){
-    stopAudio();advancedTasks.current.clear();setMode(nextMode);setIndex(0);setAnswers([]);setValue('');setHintUsed(false);setTries(0);setFeedback(null);setSaveState('idle');setSaveError('');setScreen(nextMode==='learn'?'model':'task')
+    stopAudio();submissionId.current=crypto.randomUUID();advancedTasks.current.clear();setMode(nextMode);setIndex(0);setAnswers([]);setValue('');setHintUsed(false);setTries(0);setFeedback(null);setSaveState('idle');setSaveError('');setScreen(nextMode==='learn'?'model':'task')
   }
   function check(){if(!value.trim())return;setTries(n=>n+1);setFeedback(matchesTask(task,value)?'matched':'unmatched')}
   function advance(){
@@ -77,10 +79,10 @@ export function RestaurantLesson() {
     if(saveBusy.current || saveState==='saved')return
     saveBusy.current=true;setSaveState('saving');setSaveError('')
     try{
-      const response=await fetch('/api/lessons/restaurant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,answers,expected_updated_at:progress?.updated_at})})
+      const response=await fetch('/api/lessons/restaurant',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,answers,submission_id:submissionId.current,expected_updated_at:progress?.updated_at})})
       const data=await response.json()
       if(!response.ok)throw new Error(data.error || 'Could not save.')
-      setProgress(data.progress);setDue(false);setSaveState('saved')
+      setProgress(data.progress);setDue(data.due===true);setSaveState('saved')
     }catch(error){setSaveError(error instanceof Error?error.message:'Could not save.');setSaveState('idle')}
     finally{saveBusy.current=false}
   }
@@ -121,7 +123,7 @@ export function RestaurantLesson() {
     {screen==='result' && summary && <Card><CardContent className="space-y-5 p-6"><h2 className="text-2xl font-bold">Practice completed · 练习完成</h2>
       <p>{summary.matched} of {summary.total} tasks matched the patterns checked here. {summary.unaided} matched on the first try without a hint.</p><p className="text-sm text-muted-foreground">This is a small, supported lesson, not proof that you have mastered Chinese. An unmatched alternative can still be valid. The next step is to recall it later and use it in a new situation.</p>
       <h3 className="font-semibold">What to revisit</h3>{summary.outcomes.filter(o=>!o.unaided).length?<ul className="list-inside list-disc space-y-2">{summary.outcomes.filter(o=>!o.unaided).map(o=><li key={o.id}>{tasks.find(t=>t.id===o.id)?.explanation}</li>)}</ul>:<p>Try the later recall without looking at the model. One good attempt is a starting point, not permanent mastery.</p>}
-      {saveState==='saved'?<p role="status">Saved. Next recall: {progress && new Date(progress.next_review_at).toLocaleString()}.</p>:<Button variant="primary" disabled={saveState==='saving'} onClick={()=>void save()}>{saveState==='saving'?'Saving…':'Save practice & schedule recall'}</Button>}{saveError && <p role="alert">{saveError} You can return to the start and refresh the schedule if the save already succeeded.</p>}
+      {saveState==='saved'?<p role="status">Saved. Next recall: {progress && new Date(progress.next_review_at).toLocaleString()}.</p>:<Button variant="primary" disabled={saveState==='saving'} onClick={()=>void save()}>{saveState==='saving'?'Saving…':'Save practice & schedule recall'}</Button>}{saveError && <p role="alert">{saveError} Your answers are still here. Retry saving; this same attempt will not advance your schedule twice.</p>}
       <div className="space-y-2 border-t pt-4"><h3 className="font-semibold">Use it beyond this lesson</h3><p><Link href="/conversation/restaurant" className="text-vermilion underline">Try a restaurant conversation</Link> when you are ready. Voice responses may take several seconds and use your plan’s allowance.</p><p><Link href="/mistakes" className="text-vermilion underline">Review corrections from your conversations</Link>. These are separate from this lesson’s recall schedule.</p></div>
       <Button variant="outline" disabled={saveState==='saving'} onClick={()=>{setScreen('intro');void loadSchedule()}}>Back to lesson start</Button>
     </CardContent></Card>}

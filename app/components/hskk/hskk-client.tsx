@@ -1,4 +1,5 @@
 'use client'
+import { ttsErrorMessage } from '@/lib/audio/tts-error'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { toast } from 'sonner'
@@ -492,6 +493,7 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, o
   const [ttsState, setTtsState] = useState<'loading' | 'ready' | 'playing' | 'done' | 'error'>(ttsText ? 'loading' : 'done')
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  const [ttsError, setTtsError] = useState('')
   // 加载 TTS 音频
   useEffect(() => {
     if (!ttsText) {
@@ -500,7 +502,7 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, o
     }
 
     let cancelled = false
-    setTtsState('loading')
+    setTtsState('loading'); setTtsError('')
 
     async function fetchTTS() {
       try {
@@ -510,8 +512,8 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, o
           body: JSON.stringify({ text: ttsText })
         })
 
-        if (!res.ok) throw new Error('TTS failed')
         const data = await res.json()
+        if (!res.ok) throw new Error(ttsErrorMessage(data))
 
         if (cancelled) return
 
@@ -531,8 +533,8 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, o
         } else {
           setTtsState('done')
         }
-      } catch {
-        if (!cancelled) setTtsState('error')
+      } catch (error) {
+        if (!cancelled) { setTtsState('error'); setTtsError(error instanceof Error ? error.message : ttsErrorMessage(null)) }
       }
     }
 
@@ -595,6 +597,7 @@ function RecordScreen({ title, icon, isRecording, audioLevel, onStart, onStop, o
                 {ttsState === 'playing' ? 'Playing...' : 'Replay question'}
               </button>
             )}
+            {ttsError && <p role="alert" className="text-sm text-amber-700">{ttsError}</p>}
             {ttsText && ttsState === 'error' && (
               <p className="mt-3 text-xs text-muted-foreground">Audio unavailable. Please read the question above.</p>
             )}

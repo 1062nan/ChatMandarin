@@ -1,4 +1,4 @@
-import { createHmac, randomUUID, timingSafeEqual } from 'crypto'
+import { createHmac, timingSafeEqual } from 'crypto'
 
 export type PlanType = 'plus' | 'pro'
 
@@ -30,18 +30,19 @@ export function getCreemApiBaseUrl(): string {
     : 'https://api.creem.io/v1'
 }
 
-function productIdForPlan(plan: PlanType): string {
+export function productIdForPlan(plan: PlanType): string {
   const productId = plan === 'plus' ? CREEM_PLUS_PRODUCT_ID : CREEM_PRO_PRODUCT_ID
   if (!productId) throw new Error(`Creem ${plan} product is not configured`)
   return productId
 }
 
-export async function createCheckoutUrl(options: {
+export async function createCheckoutSession(options: {
   plan: PlanType
   userEmail: string
   userId: string
   successUrl: string
-}): Promise<string> {
+  requestId: string
+}): Promise<{ id: string; url: string }> {
   if (!CREEM_API_KEY) throw new Error('Creem API key is not configured')
 
   const apiBaseUrl = getCreemApiBaseUrl()
@@ -53,7 +54,7 @@ export async function createCheckoutUrl(options: {
     },
     body: JSON.stringify({
       product_id: productIdForPlan(options.plan),
-      request_id: `${options.userId}:${options.plan}:${randomUUID()}`,
+      request_id: options.requestId,
       success_url: options.successUrl,
       customer: { email: options.userEmail },
       metadata: {
@@ -64,17 +65,22 @@ export async function createCheckoutUrl(options: {
   })
 
   const payload = await response.json().catch(() => null) as
-    | { checkout_url?: string; message?: string }
+    | { id?: string; checkout_url?: string; message?: string }
     | null
 
-  if (!response.ok || !payload?.checkout_url) {
+  if (!response.ok || !payload?.checkout_url || typeof payload.id !== 'string' || !payload.id.trim() || payload.id.length > 255) {
     const apiHost = new URL(apiBaseUrl).host
     throw new Error(
       `Creem checkout failed (${response.status}; host=${apiHost}; keyLength=${CREEM_API_KEY.length})`
     )
   }
 
-  return payload.checkout_url
+  const checkoutUrl = new URL(payload.checkout_url)
+  if (checkoutUrl.protocol !== 'https:' || checkoutUrl.port || checkoutUrl.username || checkoutUrl.password
+    || !(checkoutUrl.hostname === 'creem.io' || /^[a-z0-9-]+\.creem\.io$/.test(checkoutUrl.hostname))) {
+    throw new Error('Unexpected checkout destination')
+  }
+  return { id: payload.id, url: checkoutUrl.href }
 }
 
 export function verifyCreemWebhookSignature(payload: string, signature: string): boolean {

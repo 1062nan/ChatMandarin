@@ -1,3 +1,4 @@
+import { readBoundedBytes } from '../../../lib/http/bounded-json'
 const ASR_ENDPOINT = 'wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream'
 const TTS_ENDPOINT = 'https://openspeech.bytedance.com/api/v1/tts'
 const DEFAULT_RESOURCE_ID = 'volc.seedasr.sauc.duration'
@@ -57,14 +58,15 @@ export default {
         return json({ error: 'Not found' }, 404)
       }
 
+      const bodyLimit = url.pathname === '/v1/tts' ? 16384 : MAX_AUDIO_BYTES
       const contentLength = Number(request.headers.get('content-length') || 0)
-      if (contentLength > MAX_AUDIO_BYTES) {
+      if (contentLength > bodyLimit) {
         status = 413
         return json({ error: 'Request body too large' }, 413)
       }
 
-      const body = new Uint8Array(await request.arrayBuffer())
-      if (body.byteLength > MAX_AUDIO_BYTES) {
+      const body = await readBoundedBytes(request, bodyLimit)
+      if (body.byteLength > bodyLimit) {
         status = 413
         return json({ error: 'Request body too large' }, 413)
       }
@@ -83,11 +85,17 @@ export default {
         return json(result)
       }
 
-      const input = JSON.parse(new TextDecoder().decode(body)) as TtsRequest
+      let input: TtsRequest
+      try { input = JSON.parse(new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(body)) }
+      catch { status = 400; return json({ error: 'Invalid JSON' }, 400) }
+      if (!input || typeof input.text !== 'string' || !input.text.trim() || input.text.length > MAX_TEXT_LENGTH) {
+        status = 400; return json({ error: 'Invalid TTS text length' }, 400)
+      }
       const result = await synthesizeSpeech(input, env)
       status = 200
       return json(result)
     } catch (error) {
+      if (error instanceof RangeError) { status = 413; return json({ error: 'Request body too large' }, 413) }
       const message = error instanceof Error ? error.message : 'Unknown gateway error'
       console.error(JSON.stringify({ event: 'voice_gateway_error', path: url.pathname, colo, message }))
       status = 502
