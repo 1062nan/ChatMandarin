@@ -1,5 +1,7 @@
 'use client'
 import Link from 'next/link'
+import { DailySessionAction } from './daily-session-action'
+import { dailySessionRefreshPlan, type DailySessionPlan } from '@/lib/lessons/daily-session'
 import { useRouter } from 'next/navigation'
 import { useEffect, useTransition } from 'react'
 import { GuidedPlanDetails, ScheduleTime } from './daily-guided-plan'
@@ -16,27 +18,27 @@ export function EvidenceSummary({ evidence }: { evidence:PracticeEvidence }) {
   </div>
 }
 
-export function GuidedLearningPath({ cards }: { cards:PathwayCard[] }) {
+export function GuidedLearningPath({ cards, dailySession }: { cards:PathwayCard[]; dailySession?:DailySessionPlan }) {
   const router=useRouter()
   const [refreshing,startTransition]=useTransition()
   const refresh=()=>startTransition(()=>router.refresh())
   useEffect(()=>{router.refresh()},[router])
   useEffect(()=> {
-    const plan=pathwayRefreshPlan(cards)
+    const plan=dailySession?dailySessionRefreshPlan(dailySession):pathwayRefreshPlan(cards)
     if(!plan)return
     return watchGuidedPlan(plan,()=>router.refresh(),{
       visibility:document,
       setTimer:(callback,delay)=>window.setTimeout(callback,delay),
       clearTimer:id=>window.clearTimeout(id),
     })
-  },[cards,router])
+  },[cards,dailySession,router])
   const next=cards[0]
   const unknown=cards.some(card=>card.plan.status==='unavailable')
   const course=pathwayCourseOrder(cards)
   return <section aria-labelledby="guided-pathway-title" className="space-y-4">
-    <header><h2 id="guided-pathway-title" className="text-xl font-semibold">入门学习路线 · Your beginner pathway</h2><p className="mt-2 text-sm text-muted-foreground">先理解和表达，隔一段时间再回忆。Study and try it, then return later to recall it. Two short lessons, with separate recall schedules.</p></header>
-    {unknown && <p role="status" className="rounded-lg border p-3 text-sm">Some schedules could not be confirmed. The next step uses only known records; refresh before assuming there is no recall due.</p>}
-    {next ? <GuidedPlanDetails plan={next.plan} lesson={next} refreshing={refreshing} onRefresh={refresh} /> : <p role="status">The pathway is unavailable. <button className="underline" onClick={refresh} disabled={refreshing}>Check schedule</button></p>}
+    <header><h2 id="guided-pathway-title" className="text-xl font-semibold">今日学习与入门路线 · Today’s learning and beginner pathway</h2><p className="mt-2 text-sm text-muted-foreground">先理解和表达，隔一段时间再回忆。Study and try it, then return later to recall it. Two short lessons, with separate recall schedules.</p></header>
+    {!dailySession && unknown && <p role="status" className="rounded-lg border p-3 text-sm">Some schedules could not be confirmed. The next step uses only known records; refresh before assuming there is no recall due.</p>}
+    {dailySession ? <DailySessionAction plan={dailySession} cards={cards} refreshing={refreshing} onRefresh={refresh} /> : next ? <GuidedPlanDetails plan={next.plan} lesson={next} refreshing={refreshing} onRefresh={refresh} /> : <p role="status">The pathway is unavailable. <button className="underline" onClick={refresh} disabled={refreshing}>Check schedule</button></p>}
     <div className="rounded-lg border p-5">
       <h3 className="font-semibold">练习记录，不是能力认证 · Practice records, not a proficiency assessment</h3>
       <ol className="mt-4 space-y-5">

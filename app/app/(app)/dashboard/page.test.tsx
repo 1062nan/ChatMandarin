@@ -8,15 +8,18 @@ vi.mock('./journey-view', () => ({ JourneyView: () => null }))
 import DashboardPage from './page'
 import { GuidedLearningPath } from '@/components/lessons/guided-learning-path'
 function query(data: unknown, error: unknown = null) {
-  const q: any = { then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data, error }).then(resolve) }
-  for (const method of ['select', 'in', 'eq', 'gt', 'lte', 'order', 'limit', 'single', 'maybeSingle']) q[method] = vi.fn(() => q)
+  const q: any = { then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data:typeof data==='function'?data(q):data, error }).then(resolve) }
+  for (const method of ['select', 'in', 'eq', 'gt', 'lte', 'order', 'limit', 'single', 'maybeSingle','range','is']) q[method] = vi.fn(() => q)
+  q.lte=vi.fn(()=>{q.phase='due';return q})
+  q.gt=vi.fn(()=>{q.phase='future';return q})
   return q
 }
-function setup(progress: unknown = null, error: unknown = null) {
+function setup(progress: unknown = null, error: unknown = null, mistakes:unknown=[], mistakeError:unknown=null) {
   const lesson = query(progress, error)
-  const from = vi.fn((table: string) => table === 'profiles' ? query({ id: 'owner', display_name: 'Learner' }) : table === 'lesson_progress' ? lesson : query([]))
+  const review=query(mistakes,mistakeError)
+  const from = vi.fn((table: string) => table === 'profiles' ? query({ id: 'owner', display_name: 'Learner' }) : table === 'lesson_progress' ? lesson : table==='mistakes'?review:query([]))
   client.mockResolvedValue({ auth: { getUser: async () => ({ data: { user: { id: 'auth' } } }) }, from })
-  return { lesson, from }
+  return { lesson, from, review }
 }
 function findCard(element: any): any {
   if (!element) return null
@@ -47,6 +50,25 @@ describe('authenticated dashboard learning plan', () => {
   it('preserves unavailable state rather than falsely offering a first lesson', async () => {
     setup(null, { message: 'unavailable' })
     expect(findCard(await DashboardPage()).props.cards[0].plan.status).toBe('unavailable')
+  })
+  it('bounds both correction reads and scopes each to the authenticated owner',async()=>{
+    let reads=0
+    const {review}=setup([],null,()=>reads++===0?[{correct:'private correction',explanation:'private explanation',next_review_at:'2026-11-12T00:00:00Z'}]:[])
+    const card=findCard(await DashboardPage())
+    expect(review.select).toHaveBeenCalledWith('correct,explanation,next_review_at')
+    expect(review.eq).toHaveBeenCalledWith('user_id','owner')
+    expect(review.range).toHaveBeenCalledWith(0,99)
+    expect(review.is).toHaveBeenCalledWith('next_review_at',null)
+    expect(review.eq).not.toHaveBeenCalledWith('mastered',false)
+    expect(review.lte).toHaveBeenCalledWith('next_review_at','2026-11-13T03:09:03.000Z')
+    expect(review.gt).toHaveBeenCalledWith('next_review_at','2026-11-13T03:09:03.000Z')
+    expect(card.props.dailySession.action).toMatchObject({kind:'corrections',intent:'recall',count:1})
+    expect(JSON.stringify(card.props)).not.toContain('private correction')
+    expect(JSON.stringify(card.props)).not.toContain('private explanation')
+  })
+  it('does not recommend new content when correction reads fail',async()=>{
+    setup([],null,null,{message:'unavailable'})
+    expect(findCard(await DashboardPage()).props.dailySession).toMatchObject({unknown:true,action:{kind:'check'}})
   })
   it('has no progress reads without an authenticated user', async () => {
     const { from } = setup()

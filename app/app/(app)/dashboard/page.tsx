@@ -1,11 +1,11 @@
-import Link from 'next/link'
 import { GuidedLearningPath } from '@/components/lessons/guided-learning-path'
 import { guidedPathway } from '@/lib/lessons/pathway'
 import { GUIDED_LESSONS } from '@/lib/lessons/daily-plan'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getLearningPath } from '@/lib/db/learning-path'
 import { JourneyView } from './journey-view'
-import { isReviewableMistake } from '@/lib/ai/conversation-feedback'
+import { collectCorrectionSchedule } from '@/lib/practice/review-summary'
+import { planDailySession } from '@/lib/lessons/daily-session'
 
 export const metadata = { title: 'Dashboard' }
 
@@ -27,7 +27,7 @@ export default async function DashboardPage() {
   const totalConv = profile.total_conversations || 0
 
   // 获取学习路径
-  const { units, progress, recommendation } = await getLearningPath(profile.id, hskLevel)
+  const { units, progress } = await getLearningPath(profile.id, hskLevel)
 
   // 获取进度数组
   const progressArr = Array.from(progress.values()).map(p => ({
@@ -45,14 +45,17 @@ export default async function DashboardPage() {
     .order('started_at', { ascending: false })
     .limit(3)
 
-  // 错题数
-  const { data: pendingMistakeRows } = await supabase
-    .from('mistakes')
-    .select('correct, explanation')
-    .eq('user_id', profile.id)
-    .lte('next_review_at', new Date().toISOString())
-
-  const pendingMistakes = (pendingMistakeRows || []).filter(isReviewableMistake).length
+  // One server instant across both recall sources, including bounded legacy-card filtering.
+  const planNow=new Date()
+  const correctionSchedule=await collectCorrectionSchedule(
+    async (from,to)=>await supabase.from('mistakes').select('correct,explanation,next_review_at').eq('user_id',profile.id)
+      .lte('next_review_at',planNow.toISOString()).order('next_review_at').order('id').range(from,to),
+    async (from,to)=>await supabase.from('mistakes').select('correct,explanation,next_review_at').eq('user_id',profile.id)
+      .gt('next_review_at',planNow.toISOString()).order('next_review_at').order('id').range(from,to),
+    planNow,
+    async (from,to)=>await supabase.from('mistakes').select('correct,explanation,next_review_at').eq('user_id',profile.id)
+      .is('next_review_at',null).order('id').range(from,to),
+  )
 
   // Read only the authenticated learner's schedule. A read error is not "not started".
   const { data: guidedProgress, error: guidedError } = await supabase
@@ -60,7 +63,8 @@ export default async function DashboardPage() {
     .select('lesson_id,next_review_at,review_count,last_summary')
     .eq('user_id', profile.id)
     .in('lesson_id', GUIDED_LESSONS.map(lesson=>lesson.id))
-  const dailyPlans = guidedPathway(guidedProgress, !!guidedError, new Date())
+  const dailyPlans = guidedPathway(guidedProgress, !!guidedError, planNow)
+  const dailySession=planDailySession(dailyPlans,correctionSchedule,planNow)
 
 
   return (
@@ -72,26 +76,13 @@ export default async function DashboardPage() {
         </h1>
         <p className="mt-1 text-muted-foreground">
           🔥 {streak} 天连续学习 · {totalConv} 次对话练习
-          {pendingMistakes ? ` · ${pendingMistakes} 个错题待复习` : ''}
+          {correctionSchedule.status==='known' && correctionSchedule.dueCount>0 ? ` · ${correctionSchedule.dueCount}${correctionSchedule.hasMoreDue?'+':''} 个错题待复习` : ''}
         </p>
       </div>
 
-      {pendingMistakes > 0 && (
-        <div className="rounded-lg border border-jade/30 bg-jade/5 p-4">
-          <h2 className="font-semibold">先复习，再学新内容 · Recall before new practice</h2>
-          <p className="mt-1 text-sm text-muted-foreground">{pendingMistakes} 个纠错卡片已到复习时间。先从记忆中表达，再核对答案。</p>
-          <Link href="/mistakes" className="mt-3 inline-block font-medium text-vermilion underline">开始一组复习 / Start a short review</Link>
-        </div>
-      )}
+      <GuidedLearningPath cards={dailyPlans} dailySession={dailySession} />
 
-      <GuidedLearningPath cards={dailyPlans} />
-
-      {/* 推荐提示 */}
-      {recommendation && (
-        <div className="rounded-lg border border-vermilion/30 bg-vermilion/5 p-4">
-          <p className="text-sm font-medium">{recommendation.reason}</p>
-        </div>
-      )}
+      <div><h2 className="text-xl font-semibold">练习库 · Browse more practice</h2><p className="mt-1 text-sm text-muted-foreground">Choose optional practice below. Your recommended next step is shown above; these activities do not replace it.</p></div>
 
       {/* 学习路径 */}
       <JourneyView

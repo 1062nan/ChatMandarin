@@ -1,12 +1,11 @@
 import { isReviewableMistake } from '@/lib/ai/conversation-feedback'
-import type { Mistake } from '@/lib/db/types'
 
 /** Page past quarantined legacy cards without fetching an unbounded history. */
-export async function collectReviewQueue(
-  fetchPage: (from: number, to: number) => Promise<{ data: Mistake[] | null; error: unknown }>,
+export async function collectReviewQueue<T extends { correct:string; explanation?:string|null }>(
+  fetchPage: (from: number, to: number) => Promise<{ data: T[] | null; error: unknown }>,
   limit = 50
-): Promise<{ cards: Mistake[]; hasMore: boolean }> {
-  const cards: Mistake[] = []
+): Promise<{ cards: T[]; hasMore: boolean }> {
+  const cards: T[] = []
   for (let page = 0; page < 10; page++) {
     const { data, error } = await fetchPage(page * 100, page * 100 + 99)
     if (error) throw new Error('Unable to load reviews. Please retry.')
