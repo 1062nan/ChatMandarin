@@ -72,6 +72,12 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      <section className="rounded-lg border border-vermilion/30 bg-vermilion/5 p-5">
+        <h2 className="font-semibold">入门小课：点一份简单的餐 · Order a simple meal</h2>
+        <p className="mt-2 text-sm text-muted-foreground">先理解例句，再组句、独立表达，最后安排隔天回忆。约 8–10 分钟，可选示范音频，无需实时对话。</p>
+        <Link href="/learn/restaurant" className="mt-3 inline-block font-medium text-vermilion underline">开始小课 / Continue lesson & recall</Link>
+      </section>
+
       {/* 推荐提示 */}
       {recommendation && (
         <div className="rounded-lg border border-vermilion/30 bg-vermilion/5 p-4">
