@@ -1,16 +1,7 @@
+import { gradeLessonTasks, tasksForLesson, type LessonDefinition, type LessonMode, type TaskAnswer, type LessonTask } from './core'
+export { matchesTask, normalizeAnswer, reviewIntervalDays, claimTaskAdvance } from './core'
+export type { LessonMode, LessonTask, TaskAnswer } from './core'
 export const RESTAURANT_LESSON_ID = 'restaurant-order-v1'
-export type LessonMode = 'learn' | 'review'
-export interface LessonTask {
-  id: string
-  stage: string
-  prompt: string
-  hint: string
-  example: string
-  explanation: string
-  options?: string[]
-  correctOption?: number
-  accepts?: RegExp[]
-}
 export const MODEL_LINES = [
   { zh: '你好，请问你想吃什么？', pinyin: 'Nǐ hǎo, qǐngwèn nǐ xiǎng chī shénme?', en: 'Hello. What would you like to eat?' },
   { zh: '我想要一碗面条。', pinyin: 'Wǒ xiǎng yào yì wǎn miàntiáo.', en: 'I would like a bowl of noodles.' },
@@ -38,32 +29,18 @@ export const REVIEW_TASKS: LessonTask[] = [
   { id:'recall-tea', stage:'Transfer · 换词运用', prompt:'Ask for one cup of tea. 茶 means tea.', hint:'我想要一杯茶。', example:'我想要一杯茶。', accepts:[tea], explanation:'茶 replaces 水; 杯 stays the same.' },
   { id:'recall-new', stage:'Transfer · 换个数量', prompt:'A friend joins you. Ask for TWO glasses of water.', hint:'请给我们两杯水。', example:'请给我们两杯水。', accepts:[twoWater], explanation:'Apply the quantity 两 to a different measure word: 两杯水.' },
 ]
-export interface TaskAnswer { id: string; value: string; hintUsed: boolean; firstTry: boolean }
-export function normalizeAnswer(value: string) { return value.normalize('NFKC').replace(/[\s\p{P}]/gu,'').trim() }
-export function matchesTask(task: LessonTask, value: string) {
-  if (task.options) return value === String(task.correctOption)
-  return (task.accepts || []).some(pattern => pattern.test(normalizeAnswer(value)))
-}
-export function tasksFor(mode: LessonMode) { return mode === 'learn' ? LEARN_TASKS : REVIEW_TASKS }
-export function gradeLesson(mode: LessonMode, answers: TaskAnswer[]) {
-  const tasks = tasksFor(mode)
-  if (answers.length !== tasks.length || new Set(answers.map(a=>a.id)).size !== tasks.length) throw new Error('Complete every task once.')
-  const outcomes = tasks.map(task => {
-    const answer = answers.find(a=>a.id === task.id)
-    if (!answer || typeof answer.value !== 'string' || answer.value.length > 300 || typeof answer.hintUsed !== 'boolean' || typeof answer.firstTry !== 'boolean') throw new Error('Invalid lesson answers.')
-    const matched = matchesTask(task, answer.value)
-    return { id: task.id, matched, unaided: matched && !answer.hintUsed && answer.firstTry }
-  })
-  return { matched: outcomes.filter(o=>o.matched).length, unaided: outcomes.filter(o=>o.unaided).length, total: tasks.length, outcomes }
-}
-export function reviewIntervalDays(mode: LessonMode, successfulReviewStreak: number, unaided: number, total: number) {
-  if (mode === 'learn' || unaided < total) return 1
-  return [3,7,14,30][Math.min(Math.max(0, successfulReviewStreak),3)]
-}
 
-/** Claim before state updates: repeated events for one rendered task cannot advance twice. */
-export function claimTaskAdvance(completed: Set<string>, taskId: string, hasFeedback: boolean) {
-  if (!hasFeedback || completed.has(taskId)) return false
-  completed.add(taskId)
-  return true
+export const RESTAURANT_LESSON: LessonDefinition = {
+  id: RESTAURANT_LESSON_ID, slug: 'restaurant', title: 'Order a simple meal · 点餐',
+  subtitle: 'Understand a request, build it, then adapt it. No live conversation required.',
+  goal: 'Ask for noodles and a drink, then change the quantity or drink without copying a sentence.',
+  productionStep: 'Make requests with support, then in new situations',
+  modelLines: MODEL_LINES,
+  chunks: ['我想要… (wǒ xiǎng yào) = I would like…', '一碗面条 / 一杯水 = one bowl of noodles / one glass of water', '两碗面条 / 两杯水 = two bowls of noodles / two glasses of water'],
+  chunkNote: 'Use 两 before these measure words for “two”. 请给我… is another polite request. A number is followed by a measure word, then the item.',
+  learnTasks: LEARN_TASKS, reviewTasks: REVIEW_TASKS,
+  conversation: { href: '/conversation/restaurant', label: 'Try a restaurant conversation' },
 }
+// Keep the original lesson exports stable for existing callers.
+export function tasksFor(mode: LessonMode) { return tasksForLesson(RESTAURANT_LESSON, mode) }
+export function gradeLesson(mode: LessonMode, answers: TaskAnswer[]) { return gradeLessonTasks(RESTAURANT_LESSON, mode, answers) }

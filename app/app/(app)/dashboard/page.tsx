@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { DailyGuidedPlan } from '@/components/lessons/daily-guided-plan'
-import { guidedLessonPlan } from '@/lib/lessons/daily-plan'
-import { RESTAURANT_LESSON_ID } from '@/lib/lessons/restaurant'
+import { guidedLearningQueue, GUIDED_LESSONS } from '@/lib/lessons/daily-plan'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getLearningPath } from '@/lib/db/learning-path'
 import { JourneyView } from './journey-view'
@@ -57,11 +56,10 @@ export default async function DashboardPage() {
   // Read only the authenticated learner's schedule. A read error is not "not started".
   const { data: guidedProgress, error: guidedError } = await supabase
     .from('lesson_progress')
-    .select('next_review_at')
+    .select('lesson_id,next_review_at')
     .eq('user_id', profile.id)
-    .eq('lesson_id', RESTAURANT_LESSON_ID)
-    .maybeSingle()
-  const dailyPlan = guidedLessonPlan(guidedProgress, !!guidedError, new Date())
+    .in('lesson_id', GUIDED_LESSONS.map(lesson=>lesson.id))
+  const dailyPlans = guidedLearningQueue(guidedProgress, !!guidedError, new Date())
 
 
   return (
@@ -85,7 +83,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      <DailyGuidedPlan plan={dailyPlan} />
+      <div className="space-y-4">{dailyPlans.map(lesson=><DailyGuidedPlan key={lesson.id} plan={lesson.plan} lesson={lesson} />)}</div>
 
       {/* 推荐提示 */}
       {recommendation && (

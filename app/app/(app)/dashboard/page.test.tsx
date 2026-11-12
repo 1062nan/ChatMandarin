@@ -8,7 +8,7 @@ import DashboardPage from './page'
 import { DailyGuidedPlan } from '@/components/lessons/daily-guided-plan'
 function query(data: unknown, error: unknown = null) {
   const q: any = { then: (resolve: (v: unknown) => unknown) => Promise.resolve({ data, error }).then(resolve) }
-  for (const method of ['select', 'eq', 'gt', 'lte', 'order', 'limit', 'single', 'maybeSingle']) q[method] = vi.fn(() => q)
+  for (const method of ['select', 'in', 'eq', 'gt', 'lte', 'order', 'limit', 'single', 'maybeSingle']) q[method] = vi.fn(() => q)
   return q
 }
 function setup(progress: unknown = null, error: unknown = null) {
@@ -27,11 +27,11 @@ beforeEach(() => { vi.resetAllMocks(); vi.stubGlobal('React', React); vi.useFake
 afterEach(() => vi.useRealTimers())
 describe('authenticated dashboard learning plan', () => {
   it('reads only the owner and lesson schedule, without answers or privileged writes', async () => {
-    const { lesson } = setup({ next_review_at: '2026-11-13T03:09:03Z' })
+    const { lesson } = setup([{lesson_id:'restaurant-order-v1', next_review_at: '2026-11-13T03:09:03Z' }])
     const card = findCard(await DashboardPage())
-    expect(lesson.select).toHaveBeenCalledWith('next_review_at')
+    expect(lesson.select).toHaveBeenCalledWith('lesson_id,next_review_at')
     expect(lesson.eq).toHaveBeenCalledWith('user_id', 'owner')
-    expect(lesson.eq).toHaveBeenCalledWith('lesson_id', 'restaurant-order-v1')
+    expect(lesson.in).toHaveBeenCalledWith('lesson_id', ['restaurant-order-v1','meeting-time-v1'])
     expect(card.props.plan.status).toBe('due')
   })
   it('preserves unavailable state rather than falsely offering a first lesson', async () => {

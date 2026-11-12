@@ -36,3 +36,14 @@ describe('daily learning card', () => {
     expect(render({ status, checkedAt, nextReviewAt })).toContain('not a proficiency certificate or exam score')
   })
 })
+
+it('keeps two destination links and accessible section labels distinct',()=>{
+  const html=renderToStaticMarkup(<>
+    <DailyGuidedPlan plan={{status:'due',checkedAt,nextReviewAt}} />
+    <DailyGuidedPlan lesson={{id:'meeting-time-v1',slug:'meeting-time',title:'Suggest a meeting time'}} plan={{status:'new',checkedAt}} />
+  </>)
+  expect(html).toContain('id="guided-plan-restaurant"')
+  expect(html).toContain('id="guided-plan-meeting-time"')
+  expect(html).toContain('href="/learn/restaurant"')
+  expect(html).toContain('href="/learn/meeting-time"')
+})
