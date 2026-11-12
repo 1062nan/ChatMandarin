@@ -1,6 +1,7 @@
 'use client'
 import { ttsErrorMessage } from '@/lib/audio/tts-error'
 import Link from 'next/link'
+import { RestaurantIntro } from './restaurant-intro'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -90,18 +91,7 @@ export function RestaurantLesson() {
   return <div className="mx-auto max-w-3xl space-y-6">
     <Link href="/dashboard" className="text-sm underline">← Learning path</Link>
     <header><p className="text-sm font-medium text-vermilion">Guided beginner lesson · 入门小课</p><h1 className="mt-2 text-3xl font-bold">Order a simple meal · 点餐</h1><p className="mt-2 text-muted-foreground">Understand a request, build it, then adapt it. No live conversation required.</p></header>
-    {screen==='intro' && <>
-      <Card><CardContent className="space-y-4 p-6">
-        <h2 className="text-xl font-semibold">Your goal</h2><p>Ask for noodles and a drink, then change the quantity or drink without copying a sentence.</p>
-        <p className="text-sm text-muted-foreground">Allow about 8–10 minutes, at your own pace. Basic Chinese typing helps; you can study the model if you cannot type yet. Optional audio is synthetic. This is a first practice, not proof of proficiency or an official exam task.</p>
-        <ol className="list-inside list-decimal space-y-1"><li>Notice the example and useful chunks</li><li>Check meaning and build a phrase</li><li>Make requests with support, then in new situations</li><li>Return later for recall practice</li></ol>
-        <Button variant="primary" onClick={()=>start('learn')}>{progress?'Practise the lesson again':'Start lesson'}</Button>
-      </CardContent></Card>
-      <section aria-live="polite" className="space-y-3 rounded-lg border p-5"><h2 className="font-semibold">Your recall schedule</h2>
-        {loading?<p>Loading schedule…</p>:scheduleError?<p role="alert">{scheduleError}</p>:progress?<><p>{due?'Your recall practice is due. Try without revisiting the model first.':`Next recall: ${new Date(progress.next_review_at).toLocaleString()}. Repeating the lesson will not postpone it.`}</p>{due && <Button onClick={()=>start('review')}>Start 4 recall tasks</Button>}</>:<p>Save this lesson to schedule your first recall in about 24 hours. This schedule stays with your account.</p>}
-        <Button variant="ghost" size="sm" disabled={loading} onClick={()=>void loadSchedule()}>Refresh schedule</Button>
-      </section>
-    </>}
+    {screen==='intro' && <RestaurantIntro nextReviewAt={progress?.next_review_at || null} due={due} loading={loading} scheduleError={scheduleError} onLearn={()=>start('learn')} onReview={()=>start('review')} onRefresh={()=>void loadSchedule()} />}
     {screen==='model' && <>
       <Card><CardContent className="space-y-5 p-6"><h2 className="text-xl font-semibold">1 · Notice the example</h2><p>Read, or play each line. Listen before looking if you want a listening challenge; the tasks below check meaning, not verified listening.</p>
         {MODEL_LINES.map((line,i)=><div key={line.zh} className="rounded-lg bg-muted/50 p-4"><p lang="zh" className="text-xl">{line.zh}</p><p className="mt-1 text-sm">{line.pinyin}</p><p className="mt-1 text-sm text-muted-foreground">{line.en}</p><Button className="mt-2" variant="outline" size="sm" disabled={audioIndex!==null} onClick={()=>void playLine(i)}>{audioIndex===i?'Playing / loading…':'Listen to this line'}</Button></div>)}

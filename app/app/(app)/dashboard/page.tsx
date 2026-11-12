@@ -1,4 +1,7 @@
 import Link from 'next/link'
+import { DailyGuidedPlan } from '@/components/lessons/daily-guided-plan'
+import { guidedLessonPlan } from '@/lib/lessons/daily-plan'
+import { RESTAURANT_LESSON_ID } from '@/lib/lessons/restaurant'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import { getLearningPath } from '@/lib/db/learning-path'
 import { JourneyView } from './journey-view'
@@ -51,6 +54,16 @@ export default async function DashboardPage() {
 
   const pendingMistakes = (pendingMistakeRows || []).filter(isReviewableMistake).length
 
+  // Read only the authenticated learner's schedule. A read error is not "not started".
+  const { data: guidedProgress, error: guidedError } = await supabase
+    .from('lesson_progress')
+    .select('next_review_at')
+    .eq('user_id', profile.id)
+    .eq('lesson_id', RESTAURANT_LESSON_ID)
+    .maybeSingle()
+  const dailyPlan = guidedLessonPlan(guidedProgress, !!guidedError, new Date())
+
+
   return (
     <div className="space-y-8">
       {/* 问候 */}
@@ -72,11 +85,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      <section className="rounded-lg border border-vermilion/30 bg-vermilion/5 p-5">
-        <h2 className="font-semibold">入门小课：点一份简单的餐 · Order a simple meal</h2>
-        <p className="mt-2 text-sm text-muted-foreground">先理解例句，再组句、独立表达，最后安排隔天回忆。约 8–10 分钟，可选示范音频，无需实时对话。</p>
-        <Link href="/learn/restaurant" className="mt-3 inline-block font-medium text-vermilion underline">开始小课 / Continue lesson & recall</Link>
-      </section>
+      <DailyGuidedPlan plan={dailyPlan} />
 
       {/* 推荐提示 */}
       {recommendation && (
