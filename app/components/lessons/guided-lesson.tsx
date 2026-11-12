@@ -1,6 +1,7 @@
 'use client'
 import { ttsErrorMessage } from '@/lib/audio/tts-error'
 import Link from 'next/link'
+import { AttemptFeedback } from './attempt-feedback'
 import { LessonIntro } from './restaurant-intro'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -114,7 +115,7 @@ export function GuidedLesson({ lesson }: { lesson: LessonDefinition }) {
     </CardContent></Card>}
     {screen==='result' && summary && <Card><CardContent className="space-y-5 p-6"><h2 className="text-2xl font-bold">Practice completed · 练习完成</h2>
       <p>{summary.matched} of {summary.total} tasks matched the patterns checked here. {summary.unaided} matched on the first try without a hint.</p><p className="text-sm text-muted-foreground">This is a small, supported lesson, not proof that you have mastered Chinese. An unmatched alternative can still be valid. The next step is to recall it later and use it in a new situation.</p>
-      <h3 className="font-semibold">What to revisit</h3>{summary.outcomes.filter(o=>!o.unaided).length?<ul className="list-inside list-disc space-y-2">{summary.outcomes.filter(o=>!o.unaided).map(o=><li key={o.id}>{tasks.find(t=>t.id===o.id)?.explanation}</li>)}</ul>:<p>Try the later recall without looking at the model. One good attempt is a starting point, not permanent mastery.</p>}
+      <AttemptFeedback lesson={lesson} mode={mode} answers={answers} />
       {saveState==='saved'?<p role="status">Saved. Next recall: {progress && new Date(progress.next_review_at).toLocaleString()}.</p>:<Button variant="primary" disabled={saveState==='saving'} onClick={()=>void save()}>{saveState==='saving'?'Saving…':'Save practice & schedule recall'}</Button>}{saveError && <p role="alert">{saveError} Your answers are still here. Retry saving; this same attempt will not advance your schedule twice.</p>}
       <div className="space-y-2 border-t pt-4"><h3 className="font-semibold">Use it beyond this lesson</h3>{lesson.conversation && <p><Link href={lesson.conversation.href} className="text-vermilion underline">{lesson.conversation.label}</Link> when you are ready. Voice responses may take several seconds and use your plan’s allowance.</p>}<p><Link href="/mistakes" className="text-vermilion underline">Review corrections from your conversations</Link>. These are separate from this lesson’s recall schedule.</p></div>
       <Button variant="outline" disabled={saveState==='saving'} onClick={()=>{setScreen('intro');void loadSchedule()}}>Back to lesson start</Button>
