@@ -14,7 +14,7 @@ export default function SignupPage() {
         </Link>
         <h1 className="mt-6 text-3xl font-bold tracking-tight">Start speaking Mandarin</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Free forever for 5 minutes a day. No credit card required.
+          Practice with 5 minutes of AI conversation per day on the Free plan. No credit card required.
         </p>
       </div>
 
